@@ -106,6 +106,55 @@
 			progLightCnt = 0;
 		}//endconstructor
 		
+		public function calcTangentBasis(idxs:Vector.<uint>,verts:Vector.<Number>,uvs:Vector.<Number>) : Vector.<Number>
+		{
+			/*
+			let a be vector from p to q
+			let b be vector from p to r
+
+			p(ax,ay) + q(bx,by) s.t    (x axis)
+			p*ax + q*bx = 1  ... (1)
+			p*ay + q*by = 0  ... (2)
+
+			p*ay = -q*by
+			p = -q*by/ay   ... (2a)
+			sub in (1)
+
+			-q*ax*by/ay + q*bx = 1
+			q = 1/(bx-ax*by/ay)
+			*/
+			
+			var R:Vector.<Number> = new Vector.<Number>();
+			for (var i:int=0; i<idxs.length; i+=3)	// for each triangle
+			{
+				var i0:uint = idx[i];		// tri point index 0
+				var i1:uint = idx[i+1];		// tri point index 1 
+				var i2:uint = idx[i+2];		// tri point index 2
+				var ax:Number = uvs[i1*2] - uvs[i0*2];
+				var ay:Number = uvs[i1*2+1] - uvs[i0*2+1];
+				var bx:Number = uvs[i2*2] - uvs[i0*2];
+				var by:Number = uvs[i2*2+1] - uvs[i0*2+1];
+				
+				var q:Number = 1/(bx-ax*by/ay);
+				var p:Number = -q*by/ay;
+				
+				// find tangent vector from p q
+				ax = verts[i1*3] - verts[i0*3];
+				ay = verts[i1*3+1] - verts[i0*3+1];
+				var az:Number = verts[i1*3+2] - verts[i0*3+2];	// vector a in object space
+				bx = verts[i2*3] - verts[i0*3];
+				by = verts[i2*3+1] - verts[i0*3+1];
+				var bz:Number = verts[i2*3+2] - verts[i0*3+2];	// vector b in object space
+				
+				var tx:Number = p*ax+q*bx;
+				var ty:Number = p*ay+q*by;
+				var tz:Number = p*az+q*bz;
+				R.push(tx,ty,tz);
+			}//endfor
+			
+			return R;
+		}//endfunction
+		
 		/**
 		* does a clone of this entire branch and returns clone
 		*/
