@@ -1,7 +1,6 @@
 package core3D
 {
-	import flash.geom.*;
-	import flash.display.BitmapData;
+	import flash.geom.Vector3D;
 	
 	/**
 	* Author: Lin Minjiang	

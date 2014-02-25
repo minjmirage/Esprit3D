@@ -1,26 +1,36 @@
 ﻿package core3D
 {
-	import flash.text.*;
-	import flash.geom.*;
-	import flash.utils.*;
-	import flash.events.*;
-	import flash.filters.*;
-	import flash.display3D.*;
-	import flash.display.*;
-	
+	import flash.display.Bitmap;
+	import flash.display.BitmapData;
+	import flash.display.Loader;
+	import flash.display.Stage;
+	import flash.display.Stage3D;
+	import flash.display3D.Context3D;
+	import flash.display3D.Context3DProgramType;
+	import flash.display3D.Context3DTextureFormat;
+	import flash.display3D.Context3DTriangleFace;
+	import flash.display3D.IndexBuffer3D;
+	import flash.display3D.Program3D;
+	import flash.display3D.VertexBuffer3D;
+	import flash.display3D.textures.CubeTexture;
+	import flash.display3D.textures.Texture;
+	import flash.events.Event;
+	import flash.events.IOErrorEvent;
+	import flash.geom.Matrix;
+	import flash.geom.Point;
+	import flash.geom.Vector3D;
+	import flash.net.FileReference;
 	import flash.net.URLLoader;
 	import flash.net.URLRequest;
-	import flash.net.FileReference;
 	import flash.system.System;
-	
-	import core3D.AGALMiniAssembler;
-	import core3D.Matrix4x4;
-	import flash.display3D.textures.Texture;
-	import flash.display3D.textures.CubeTexture;
+	import flash.text.TextField;
+	import flash.text.TextFormat;
+	import flash.utils.ByteArray;
+	import flash.utils.getTimer;
 		
 	/**
 	* Unified 3D Mesh class
-	* Author: Lin Minjiang	2012/12/17	updated
+	* Author: Lin Minjiang	2014/02/24	updated
 	* Known Issues: No farClip, shadowMapping range too short
 	*/
 	public class Mesh
@@ -41,7 +51,7 @@
 		public var trisCnt:int;							// number of triangles to tell program to draw
 		public var texture:BitmapData;					// texture of current mesh, can be null
 		private var specMap:BitmapData;					// specular map of current mesh, can be null
-		private var vertexBuffer:VertexBuffer3D;		// Where Vertex data for this mesh will be stored
+		private var vertexBuffer:VertexBuffer3D;		// Where Vertex positions for this mesh will be stored
 		private var indexBuffer:IndexBuffer3D;			// Order of Vertices to be drawn for this mesh
 		private var textureBuffer:Texture;				// uploaded Texture of this mesh
 		private var envMapBuffer:CubeTexture;			// uploaded env map of this mesh
@@ -71,7 +81,7 @@
 		
 		private static var viewWidth:uint = 0;			// current width of render viewport 
 		private static var viewHeight:uint = 0; 		// current height of render viewport 
-		private static var context3d:Context3D;			// reference to the shared context3D for rendering onto stage3D
+		public static var context3d:Context3D;			// reference to the shared context3D for rendering onto stage3D
 		private static var fTV:Vector.<int>=null;		// time of each render call 
 		public static var fpsStats:String="";			// stats traceout of the last render
 		
@@ -129,6 +139,7 @@
 			
 			var i:int=0;
 			var n:int=verts.length/3;
+			var v:Vector3D = null;
 			
 			var RV:Vector.<Vector3D> = new Vector.<Vector3D>();
 			for (i=0; i<n; i++)	RV.push(new Vector3D(0,0,0));
@@ -136,9 +147,9 @@
 			n = idxs.length;
 			for (i=0; i<n; i+=3)	// for each triangle
 			{
-				var i0:uint = idx[i];		// tri point index 0
-				var i1:uint = idx[i+1];		// tri point index 1 
-				var i2:uint = idx[i+2];		// tri point index 2
+				var i0:uint = idxs[i];		// tri point index 0
+				var i1:uint = idxs[i+1];	// tri point index 1 
+				var i2:uint = idxs[i+2];	// tri point index 2
 				var ax:Number = uvs[i1*2] - uvs[i0*2];
 				var ay:Number = uvs[i1*2+1] - uvs[i0*2+1];
 				var bx:Number = uvs[i2*2] - uvs[i0*2];
@@ -158,13 +169,9 @@
 				var tx:Number = p*ax+q*bx;
 				var ty:Number = p*ay+q*by;
 				var tz:Number = p*az+q*bz;
-				
-				var v:Vector3D = RV[i0];
-				v.x+=tx; v.y+=ty; v.z+=tz; v.w++;
-				v = RV[i1];
-				v.x+=tx; v.y+=ty; v.z+=tz; v.w++;
-				v = RV[i2];
-				v.x+=tx; v.y+=ty; v.z+=tz; v.w++;
+				v = RV[i0];		v.x+=tx; v.y+=ty; v.z+=tz; v.w++;
+				v = RV[i1];		v.x+=tx; v.y+=ty; v.z+=tz; v.w++;
+				v = RV[i2];		v.x+=tx; v.y+=ty; v.z+=tz; v.w++;
 			}//endfor
 			
 			// ----- get tangent results for each corresponding point
@@ -175,7 +182,7 @@
 				v = RV[i];
 				if (v.w>1)	{v.x/=v.w; v.y/=v.w; v.z/=v.w;}
 				if (v.length>0) v.normalize();
-				R.push(vx,vy,vz);
+				R.push(v.x,v.y,v.z);
 			}//endfor
 			
 			return R;
@@ -574,11 +581,11 @@
 			if (indicesData==null)
 			{
 				// ----- trim down vertices if too much --------------------------
-				var maxVertices:uint = 21000;
-				if (verticesData.length>maxVertices*24)
+				var maxVertices:uint = 65535;
+				if (verticesData.length>maxVertices*8)
 				{
 					debugTrace("trimming numvertices down to "+maxVertices);
-					verticesData = verticesData.slice(0,maxVertices*24);
+					verticesData = verticesData.slice(0,maxVertices*8);
 				}
 				n = verticesData.length;
 				
@@ -650,8 +657,12 @@
 			if (context3d==null)	return;
 			
 			// ----- set context vertices data ----------------------------------------
-			if (!overwrite || vertexBuffer==null) 
-				vertexBuffer=context3d.createVertexBuffer(numVertices, 8);	// vertex vx,vy,vz, nx,ny,nz, u,v
+			if (!overwrite || vertexBuffer==null) 	vertexBuffer=context3d.createVertexBuffer(numVertices, 8);	// vx,vy,vz,nx,ny,nz,u,v
+			var V:Vector.<Number> = new Vector.<Number>();
+			var N:Vector.<Number> = new Vector.<Number>();
+			var U:Vector.<Number> = new Vector.<Number>();
+			var T:Vector.<Number> = new Vector.<Number>();
+						
 			vertexBuffer.uploadFromVector(vertData, 0, numVertices);
 			
 			// ----- set context indices data -----------------------------------------
@@ -1791,11 +1802,11 @@
 			var i:int=0;
 			while (i<lat)
 			{
-				var A:Vector.<Number> = createTrianglesBand(	Math.sin(Math.PI*i/lat)*r,
-																Math.sin(Math.PI*(i+1)/lat)*r,
-																-Math.cos(Math.PI*i/lat)*r,
-																-Math.cos(Math.PI*(i+1)/lat)*r,
-																lon,soft);
+				var A:Vector.<Number> = createTrianglesBand(Math.sin(Math.PI*i/lat)*r,
+															Math.sin(Math.PI*(i+1)/lat)*r,
+															-Math.cos(Math.PI*i/lat)*r,
+															-Math.cos(Math.PI*(i+1)/lat)*r,
+															lon,soft);
 				
 				// ----- adjust UVs of mesh to wrap entire torus instead
 				for (var j:int=0; j<A.length; j+=8)	A[j+7]=i/lat+A[j+7]/lat;
@@ -2852,7 +2863,7 @@
 		{
 			var tf:TextField = new TextField();
 			tf.defaultTextFormat = new TextFormat("_sans",12,0x00ffFF);
-			tf.autoSize = TextFieldAutoSize.LEFT;
+			tf.autoSize = "left";
 			tf.wordWrap = false;
 			tf.selectable = false;
 			tf.mouseEnabled = false;
@@ -2873,7 +2884,7 @@
 				debugTf.x = 5;
 				debugTf.y = 5;
 				debugTf.defaultTextFormat = new TextFormat("_sans",10,0x00ff00);
-				debugTf.autoSize = TextFieldAutoSize.LEFT;
+				debugTf.autoSize = "left";
 				debugTf.multiline = true;
 				debugTf.wordWrap = false;
 			}
@@ -3437,7 +3448,8 @@
 	}//endclass
 }//endpackage
 
-import flash.geom.*;
+import flash.geom.Vector3D;
+
 import core3D.VertexData;
 
 /**

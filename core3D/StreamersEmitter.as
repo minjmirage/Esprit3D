@@ -1,8 +1,11 @@
 package core3D
 {
-	import flash.geom.*;
 	import flash.display.BitmapData;
 	import flash.display.MovieClip;
+	import flash.geom.Matrix;
+	import flash.geom.Point;
+	import flash.geom.Rectangle;
+	import flash.geom.Vector3D;
 	
 	/**
 	* Author: Lin Minjiang	2012/07/10	updated
