@@ -118,8 +118,10 @@
 		
 		/**
 		* calculate tangents for normal mapping
+		* input: [vx,vy,vz,nx,ny,nz,u,v,...]
+		* output: [vx,vy,vz,nx,ny,nz,tx,ty,tz,u,v,...]
 		*/
-		public function calcTangentBasis(idxs:Vector.<uint>,verts:Vector.<Number>,uvs:Vector.<Number>) : Vector.<Number>
+		public function calcTangentBasis(idxs:Vector.<uint>,vData:Vector.<Number>) : Vector.<Number>
 		{
 			/*
 			let a be vector from p to q
@@ -138,7 +140,7 @@
 			*/
 			
 			var i:int=0;
-			var n:int=verts.length/3;
+			var n:int=vData.length/8;
 			var v:Vector3D = null;
 			
 			var RV:Vector.<Vector3D> = new Vector.<Vector3D>();
@@ -150,21 +152,21 @@
 				var i0:uint = idxs[i];		// tri point index 0
 				var i1:uint = idxs[i+1];	// tri point index 1 
 				var i2:uint = idxs[i+2];	// tri point index 2
-				var ax:Number = uvs[i1*2] - uvs[i0*2];
-				var ay:Number = uvs[i1*2+1] - uvs[i0*2+1];
-				var bx:Number = uvs[i2*2] - uvs[i0*2];
-				var by:Number = uvs[i2*2+1] - uvs[i0*2+1];
+				var ax:Number = vData[i1*8+6] - vData[i0*8+6];
+				var ay:Number = vData[i1*8+7] - vData[i0*8+7];
+				var bx:Number = vData[i2*8+6] - vData[i0*8+6];
+				var by:Number = vData[i2*8+7] - vData[i0*8+7];
 				
 				var q:Number = 1/(bx-ax*by/ay);
 				var p:Number = -q*by/ay;
 				
 				// find tangent vector from p q
-				ax = verts[i1*3] - verts[i0*3];
-				ay = verts[i1*3+1] - verts[i0*3+1];
-				var az:Number = verts[i1*3+2] - verts[i0*3+2];	// vector a in object space
-				bx = verts[i2*3] - verts[i0*3];
-				by = verts[i2*3+1] - verts[i0*3+1];
-				var bz:Number = verts[i2*3+2] - verts[i0*3+2];	// vector b in object space
+				ax = vData[i1*8] - vData[i0*8];
+				ay = vData[i1*8+1] - vData[i0*8+1];
+				var az:Number = vData[i1*8+2] - vData[i0*8+2];	// vector a in object space
+				bx = vData[i2*8] - vData[i0*8];
+				by = vData[i2*8+1] - vData[i0*8+1];
+				var bz:Number = vData[i2*8+2] - vData[i0*8+2];	// vector b in object space
 				
 				var tx:Number = p*ax+q*bx;
 				var ty:Number = p*ay+q*by;
@@ -182,7 +184,10 @@
 				v = RV[i];
 				if (v.w>1)	{v.x/=v.w; v.y/=v.w; v.z/=v.w;}
 				if (v.length>0) v.normalize();
-				R.push(v.x,v.y,v.z);
+				R.push(	vData[i*8+0],vData[i*8+1],vData[i*8+2],	// vx,vy,vz
+						vData[i*8+3],vData[i*8+4],vData[i*8+5],	// nx,ny,nz
+						v.x,v.y,v.z,	// tx,ty,tz
+						vData[i*8+6],vData[i*8+7]);				// u,v
 			}//endfor
 			
 			return R;
@@ -270,6 +275,7 @@
 				}
 			}
 			
+			if (m.transform!=null) m.transform.ad*=-1;
 			for (var i:int=m.childMeshes.length-1; i>-1; i--)
 				_mirrorTree(m.childMeshes[i]);
 		}//endfunction
@@ -658,11 +664,6 @@
 			
 			// ----- set context vertices data ----------------------------------------
 			if (!overwrite || vertexBuffer==null) 	vertexBuffer=context3d.createVertexBuffer(numVertices, 8);	// vx,vy,vz,nx,ny,nz,u,v
-			var V:Vector.<Number> = new Vector.<Number>();
-			var N:Vector.<Number> = new Vector.<Number>();
-			var U:Vector.<Number> = new Vector.<Number>();
-			var T:Vector.<Number> = new Vector.<Number>();
-						
 			vertexBuffer.uploadFromVector(vertData, 0, numVertices);
 			
 			// ----- set context indices data -----------------------------------------
@@ -1221,7 +1222,7 @@
 			
 				for (i=0; i<n; i+=8)
 				{
-					vertData[i+0]-=mean.x;
+					vertData[i]-=mean.x;
 					vertData[i+1]-=mean.y;
 					vertData[i+2]-=mean.z;
 				}//endfor
@@ -1233,7 +1234,10 @@
 			
 			if (propagate && childMeshes!=null)
 				for (i=0; i<childMeshes.length; i++)
+				{
 					childMeshes[i].centerToGeometry(propagate);
+					childMeshes[i].transform.translate(-mean.x,-mean.y,-mean.z);
+				}
 		}//endfunction
 				
 		/**
