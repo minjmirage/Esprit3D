@@ -106,6 +106,9 @@
 			progLightCnt = 0;
 		}//endconstructor
 		
+		/**
+		* calculate tangents for normal mapping
+		*/
 		public function calcTangentBasis(idxs:Vector.<uint>,verts:Vector.<Number>,uvs:Vector.<Number>) : Vector.<Number>
 		{
 			/*
@@ -124,8 +127,14 @@
 			q = 1/(bx-ax*by/ay)
 			*/
 			
-			var R:Vector.<Number> = new Vector.<Number>();
-			for (var i:int=0; i<idxs.length; i+=3)	// for each triangle
+			var i:int=0;
+			var n:int=verts.length/3;
+			
+			var RV:Vector.<Vector3D> = new Vector.<Vector3D>();
+			for (i=0; i<n; i++)	RV.push(new Vector3D(0,0,0));
+			
+			n = idxs.length;
+			for (i=0; i<n; i+=3)	// for each triangle
 			{
 				var i0:uint = idx[i];		// tri point index 0
 				var i1:uint = idx[i+1];		// tri point index 1 
@@ -149,7 +158,24 @@
 				var tx:Number = p*ax+q*bx;
 				var ty:Number = p*ay+q*by;
 				var tz:Number = p*az+q*bz;
-				R.push(tx,ty,tz);
+				
+				var v:Vector3D = RV[i0];
+				v.x+=tx; v.y+=ty; v.z+=tz; v.w++;
+				v = RV[i1];
+				v.x+=tx; v.y+=ty; v.z+=tz; v.w++;
+				v = RV[i2];
+				v.x+=tx; v.y+=ty; v.z+=tz; v.w++;
+			}//endfor
+			
+			// ----- get tangent results for each corresponding point
+			var R:Vector.<Number> = new Vector.<Number>();
+			n = RV.length;
+			for (i=0; i<n; i++)	
+			{
+				v = RV[i];
+				if (v.w>1)	{v.x/=v.w; v.y/=v.w; v.z/=v.w;}
+				if (v.length>0) v.normalize();
+				R.push(vx,vy,vz);
 			}//endfor
 			
 			return R;
