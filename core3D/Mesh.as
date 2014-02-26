@@ -50,6 +50,7 @@
 				
 		public var trisCnt:int;							// number of triangles to tell program to draw
 		public var texture:BitmapData;					// texture of current mesh, can be null
+		private var normMap:BitmapData;					// normal map of current mesh, can be null
 		private var specMap:BitmapData;					// specular map of current mesh, can be null
 		private var vertexBuffer:VertexBuffer3D;		// Where Vertex positions for this mesh will be stored
 		private var indexBuffer:IndexBuffer3D;			// Order of Vertices to be drawn for this mesh
@@ -178,7 +179,7 @@
 			
 			// ----- get tangent results for each corresponding point
 			var R:Vector.<Number> = new Vector.<Number>();
-			n = RV.length;
+			n = vData.length/8;
 			for (i=0; i<n; i++)	
 			{
 				v = RV[i];
@@ -663,8 +664,9 @@
 			if (context3d==null)	return;
 			
 			// ----- set context vertices data ----------------------------------------
-			if (!overwrite || vertexBuffer==null) 	vertexBuffer=context3d.createVertexBuffer(numVertices, 8);	// vx,vy,vz,nx,ny,nz,u,v
-			vertexBuffer.uploadFromVector(vertData, 0, numVertices);
+			var vntData:Vector.<Number> = calcTangentBasis(idxsData,vertData);
+			if (!overwrite || vertexBuffer==null) 	vertexBuffer=context3d.createVertexBuffer(numVertices, 11);	// vx,vy,vz,nx,ny,nz,tx,ty,tz,u,v
+			vertexBuffer.uploadFromVector(vntData, 0, numVertices);
 			
 			// ----- set context indices data -----------------------------------------
 			if (!overwrite || indexBuffer==null) 
@@ -817,6 +819,25 @@
 				return propagate;
 			}
 			treeTransverse(this,specFn);
+		}//endfunction
+		
+		/**
+		* sets/overrides new specular map data to this mesh
+		*/
+		public function setNormalMap(bmd:BitmapData,propagate:Boolean=false) : void
+		{
+			var normFn:Function = function(M:Mesh,pM:Mesh):Boolean
+			{
+				if ((M.normMap==null && bmd!=null) || (M.normMap!=null && bmd==null))
+				{
+					M.stdProgram=null;
+					M.shadowProgram=null;
+				}	
+				M.normMap = powOf2Size(bmd);
+				M.specMapBuffer = uploadTextureBuffer(M.normMap);
+				return propagate;
+			}
+			treeTransverse(this,normFn);
 		}//endfunction
 		
 		/**
@@ -1207,9 +1228,10 @@
 		*/
 		public function centerToGeometry(propagate:Boolean=false) : void
 		{
+			var mean:Vector3D = new Vector3D(0,0,0);
+			
 			if (dataType==_typeV && idxsData!=null && vertData!=null)
 			{			
-				var mean:Vector3D = new Vector3D(0,0,0);
 				var n:int = vertData.length;
 				for (var i:int=0; i<n; i+=8)
 				{
@@ -1236,6 +1258,7 @@
 				for (i=0; i<childMeshes.length; i++)
 				{
 					childMeshes[i].centerToGeometry(propagate);
+					if (childMeshes[i].transform==null)	childMeshes[i].transform = new Matrix4x4();
 					childMeshes[i].transform.translate(-mean.x,-mean.y,-mean.z);
 				}
 		}//endfunction
@@ -1446,10 +1469,10 @@
 						{
 							context3d.setVertexBufferAt(0, M.vertexBuffer, 0, "float3");	// va0 to expect vertices
 							context3d.setVertexBufferAt(1, M.vertexBuffer, 3, "float3");	// va1 to expect normals
-							context3d.setVertexBufferAt(2, M.vertexBuffer, 6, "float2");	// va2 to expect uvs
+							context3d.setVertexBufferAt(2, M.vertexBuffer, 6, "float3");	// va2 to expect tangents
+							context3d.setVertexBufferAt(3, M.vertexBuffer, 9, "float2");	// va3 to expect uvs
 							if (prevType!=_typeV)
 							{
-								context3d.setVertexBufferAt(3, null);
 								context3d.setVertexBufferAt(4, null);
 								context3d.setVertexBufferAt(5, null);
 							}
@@ -1736,7 +1759,7 @@
 				gettingContext=false;
 				var stage3d:Stage3D=Stage3D(ev.currentTarget);
 				context3d=stage3d.context3D;
-				context3d.enableErrorChecking=false;	//**********************************
+				context3d.enableErrorChecking=true;	//**********************************
 				debugTrace("got context3d, driverInfo:"+context3d.driverInfo);
 				configBackBufferAndCallBack();
 			}//endfunction
@@ -2897,12 +2920,12 @@
 		
 		/**
 		* Standard vertex shader read src 			(3 instructions)
-		* input : 		va0 = vertex	va1 = normal	va2 = texU,texV
-		* outputs:		vt0 = vertex	vt1 = normal  	vt2 = texU,texV
+		* input : 		va0 = vertex	va1 = normal	va2 = tangent	va3 = texU,texV
+		* outputs:		vt0 = vertex	vt1 = normal  	vt2 = texU,texV vt3 = tangent
 		*/
 		private static function _stdReadVertSrc() : String
 		{
-			var s:String = "mov vt0, va0\n"+"mov vt1, va1\n"+"mov vt2, va2\n";
+			var s:String = "mov vt0, va0\n"+"mov vt1, va1\n"+"mov vt2, va3\n"+"mov vt3, va2\n";
 			return s;
 		}//endfunction
 		
@@ -3105,17 +3128,18 @@
 		* inputs: 		vt0 = vx,vy,vz,1 untransformed vertex
 		*				vt1 = nx,ny,nz,0 untransformed nomal
 		*				vt2 = texU,texV
+		*				vt3 = nx,ny,nz,0 untransformed tangent
 		* constants:	vc0=[nearClip,farClip,focalL,aspectRatio], vc1-vc4=TransformMatrix
 		* frag outputs:	v0= transformed vertex 
 		*				v1= transformed normal 
 		*				v2= UV 
 		*				v3= untransformed vertex
-		*				v4=[nearClip,farClip,focalL,aspectRatio]
+		*				v4= transformed tangent
 		*/
 		private static function _stdPersVertSrc(hasLights:Boolean=true,hasFog:Boolean=true) : String
 		{
 			var s:String = 
-			"mov vt3, vt0\n" +					// vt3 = untransformed coordinates
+			"mov v3, vt0\n"+					// 
 			"m34 vt0.xyz, vt0, vc1\n";			// vt0 = apply spatial transform to vertex
 			
 			if (hasLights || hasFog) s+= "mov v0, vt0\n";	// move vertex to fragment shader v0
@@ -3128,18 +3152,18 @@
 			"mov vt0.z, vc4.w\n" + 				// vt0.z = 1
 			// vt0.xyz will be automatically divided by vt0.w	depth buffer test (greater)
 			
-			"mov op, vt0\n" +	 				// output transformed value
+			"mov op, vt0\n" +	 				// output transformed point
 			"mov v2, vt2\n";					// move UV to fragment shader v2
 			
 			if (hasLights)
 			s+=	"mov vt1.w, vc4.x\n" +			// vt1 = nx,ny,nz,0
 				"m33 vt1.xyz, vt1.xyz, vc1\n" +	// vt1=transformed normal
 				"nrm vt1.xyz, vt1.xyz\n" + 		// vt1=normalized normals
-			
 				"mov v1, vt1\n" +				// move normal to fragment shader v1
-				"mov v3, vt3\n" +				// move untransformed coordinates to v3
-				"mov v4, vc0\n";				// v4 = [nearClip,farClip,focalL,aspectRatio]
-		
+				"mov vt3.w, vc4.x\n" +			// vt3 = nx,ny,nz,0
+				"m33 vt3.xyz, vt3.xyz, vc1\n" +	// vt3=transformed tangent
+				"nrm vt3.xyz, vt3.xyz\n" + 		// vt3=normalized tangent
+				"mov v4, vt3\n";				// move tangent to fragment shader v3
 			return s;
 		}//endfunction
 		
@@ -3148,7 +3172,8 @@
 		* inputs:		v0= transformed vertex 
 		*				v1= transformed normal 
 		*				v2= UV 
-		*				v3=untransformed vertex 
+		*				v3= untransformed vertex
+		*				v4= transformed tangent
 		*				v4=[nearClip,farClip,focalL,aspectRatio] 
 		* constants:	fc0= [0,0.5,1,2]	// useful constants
 		*				fc1= [r,g,b,sf]		// ambient and specular factor
@@ -3193,32 +3218,47 @@
 			if (hasTex)	
 				s =	"tex ft0, v2, fs0 <2d,linear,mipnone,repeat> \n"; 	// ft0=sample texture with UV use miplinear to enable mipmapping
 			else
-				s = "mov ft0, fc0.zzzz\n";						// ft0 = 1,1,1,1
+				s = "mov ft0, fc0.zzzz\n";				// ft0 = 1,1,1,1
 			
-			s +=	"mul ft1.rgb, ft0.rgb, fc1.rgb\n"+			// ft1= calc ambient color
-					"mov ft5 fc0.xxxx\n"+						// ft5= 0,0,0,0 diffuse lighting accu
-					"mov ft6 fc0.xxxx\n";						// ft6= 0,0,0,0 specular highlights accu
-					
+			s +=	"mov ft5 fc0.xxxx\n"+				// ft5= 0,0,0,0 diffuse lighting accu
+					"mov ft6 fc0.xxxx\n"+				// ft6= 0,0,0,0 specular highlights accu
+					"nrm ft1.xyz, v1.xyz\n";			// normalized vertex normal
+			
+			/*
+			if (hasNorm)	// if has normal mapping
+				s+=	"tex ft7, v2, fs2 <2d,linear,repeat>\n"+	// ft7=sample normMap with UV
+				"mul ft7.xyz, ft7.xyz, fc0.www\n"+				// ft7.xyz *= 2
+				"sub ft7.xyz, ft7.xyz, fc0.zzz\n"+				// ft7.xyz = ft7.xyz*2-1
+				"nrm ft7.xyz, ft7.xyz\n"+						// normalized normal map value
+				"nrm ft2.xyz, v4.xyz\n"+						// ft2=normalized tangent
+				"crs tf3.xyz, ft1.xyz, ft2.xyz\n"+				// ft3=co tangent
+				"mul ft2.xyz, ft2.xyz, ft7.xxx\n"+				// ft2=x*tangent
+				"mul ft3.xyz, ft3.xyz, ft7.yyy\n"+				// ft3=y*co tangent
+				"mul ft1.xyz, ft1.xyz, ft7.zzz\n"+				// ft1=z*normal
+				"add ft1.xyz, ft1.xyz, ft2.xyz\n"+
+				"add ft1.xyz, ft1.xyz, ft3.xyz\n";				// ft1=perturbed normal
+				
+				*/
+			
 			// ----- for each light point, op codes to handle lighting mix ----
 			for (var i:int=0; i<numLights; i++)
 			{
-				s+= "nrm ft7.xyz, v1.xyz\n"+			// normalized normal
-					"sub ft2, fc"+(i*2+3)+", v0 \n"+	// ft2=vector from point to light source
-					"nrm ft2.xyz, ft2.xyz \n"+			// ft2=normalize light vector
-			
+				s+= "sub ft2, fc"+(i*2+3)+", v0 \n"+	// ft2=vector from point to light source
+					"nrm ft2.xyz, ft2.xyz \n";			// ft2=normalize light vector
+				
+					// ----- calculate diffuse lighting 
+				s+=	"dp3 ft3, ft2, ft1.xyz\n"+			// ft3.xyzw=dot normal with light vector
+					"max ft3, ft3, fc0.xxxx\n"+   		// ft3=max(0,ft3)
+					"mul ft3, ft0, ft3\n"+  			// ft3=multiply fragment color by intensity from texture
+					"mul ft3, ft3, fc"+(i*2+4)+"\n"+	// ft3=multiply fragment color by light color
+					
 					// ----- calculate blinn phong halfway vector for spec lighting
 					"neg ft4, v0\n" + 					// ft4=vector from pt to viewer
 					"nrm ft4.xyz, ft4\n"+				// ft4=normalized view vector
 					"add ft4, ft2, ft4\n"+				// ft4=halfway vector
 					"nrm ft4.xyz, ft4\n" +				// ft4=normalize halfway vector
-					"dp3 ft4, ft4, ft7.xyz\n"+			// ft4=dot normal with halfway vector (scalar)
-			
-					// ----- calculate diffuse lighting 
-					"dp3 ft2, ft2, ft7.xyz\n"+			// ft2.xyzw=dot normal with light vector
-					"max ft2, ft2, fc0.xxxx\n"+   		// ft2=max(0,ft2)
-					"mul ft3, ft0, ft2\n"+  			// ft3=multiply fragment color by intensity from texture
-					"mul ft3, ft3, fc"+(i*2+4)+"\n";	// ft3=multiply fragment color by light color
-
+					"dp3 ft4, ft4, ft1.xyz\n";			// ft4=dot normal with halfway vector (scalar)
+								
 				// ----- calculate specular reflection
 				s+= "mov ft7.x, fc"+(i*2+3)+".w\n"+		// ft7.x=0.125
 					"sub ft7.y, fc0.z, ft7.x\n"+		// ft7.y=1-0.125
@@ -3236,7 +3276,7 @@
 					
 				s+= "max ft5, ft5, ft3 \n"+				// ft5=accumulated diffuse color
 					"add ft6, ft6, ft2 \n";				// ft6=accumulated specular highlight
-			}
+			}//endfor
 			
 			if (envMap)
 			s += _envMapFragSrc()+						// uses ft7 output to ft4
@@ -3246,8 +3286,9 @@
 			s+=	"tex ft7, v2, fs2 <2d,linear,repeat>\n"+	// ft7=sample specMap with UV
 				"mul ft6, ft6, ft7\n";						// specMap*light color*sf
 									
-			s+= "add ft5, ft5, ft6\n"+				// combine specular highlight with diffuse color 
-				"mov ft5.w, ft0.w\n";				// move alpha value of texture over
+			s+= "add ft5, ft5, ft6\n"+					// combine specular highlight with diffuse color 
+				"mov ft5.w, ft0.w\n"+					// move alpha value of texture over
+				"mul ft1.rgb, ft0.rgb, fc1.rgb\n";		// ft1= calculated ambient color
 				
 			// ----- implement simple linear fog ------------------------------
 			if (fog)
