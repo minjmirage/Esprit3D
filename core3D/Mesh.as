@@ -2,8 +2,10 @@
 {
 	import flash.display.Bitmap;
 	import flash.display.BitmapData;
+	import flash.display.BitmapDataChannel;
 	import flash.display.Loader;
 	import flash.display.Stage;
+	import flash.filters.ColorMatrixFilter;
 	import flash.display.Stage3D;
 	import flash.display3D.Context3D;
 	import flash.display3D.Context3DProgramType;
@@ -19,6 +21,7 @@
 	import flash.geom.Matrix;
 	import flash.geom.Point;
 	import flash.geom.Vector3D;
+	import flash.geom.Rectangle;
 	import flash.net.FileReference;
 	import flash.net.URLLoader;
 	import flash.net.URLRequest;
@@ -50,13 +53,12 @@
 				
 		public var trisCnt:int;							// number of triangles to tell program to draw
 		public var texture:BitmapData;					// texture of current mesh, can be null
-		private var normMap:BitmapData;					// normal map of current mesh, can be null
-		private var specMap:BitmapData;					// specular map of current mesh, can be null
+		private var normMap:BitmapData;					// combined normal and specular map of current mesh, can be null
 		private var vertexBuffer:VertexBuffer3D;		// Where Vertex positions for this mesh will be stored
 		private var indexBuffer:IndexBuffer3D;			// Order of Vertices to be drawn for this mesh
 		private var textureBuffer:Texture;				// uploaded Texture of this mesh
 		private var envMapBuffer:CubeTexture;			// uploaded env map of this mesh
-		private var specMapBuffer:Texture;				// uploaded specular map of this mesh
+		private var normMapBuffer:Texture;				// uploaded normal & specular map of this mesh
 		private var stdProgram:Program3D;				// rendering program specific for this mesh
 		private var shadowProgram:Program3D;			// shadowmapped rendering program specific for this mesh
 		private var depthProgram:Program3D;				// program for rendering depth maps for shadow mapping
@@ -90,7 +92,7 @@
 		private static var prevType:int = -1;
 		private static var prevTex:Texture=null;
 		private static var prevEnv:CubeTexture=null;
-		private static var prevSpec:Texture=null;
+		private static var prevNorm:Texture=null;
 		private static var prevProg:Program3D = null;
 				
 		private static var gettingContext:Boolean = false;	// GLOBAL chks if in process of getting context
@@ -105,11 +107,10 @@
 		/**
 		* CONSTRUCTOR      verticesData : [vx,vy,vz,nx,ny,nz,u,v, ....]
 		*/
-		public function Mesh(verticesData:Vector.<Number>=null,bmd:BitmapData=null,spec:BitmapData=null) : void
+		public function Mesh(verticesData:Vector.<Number>=null,bmd:BitmapData=null) : void
 		{
 			setGeometry(verticesData);
 			setTexture(bmd);
-			setSpecularMap(spec);
 			childMeshes = new Vector.<Mesh>();		// child meshes list
 			transform = new Matrix4x4();
 			setAmbient(0.3,0.3,0.3,0.1);			// R,G,B,Specular
@@ -122,7 +123,7 @@
 		* input: [vx,vy,vz,nx,ny,nz,u,v,...]
 		* output: [vx,vy,vz,nx,ny,nz,tx,ty,tz,u,v,...]
 		*/
-		public function calcTangentBasis(idxs:Vector.<uint>,vData:Vector.<Number>) : Vector.<Number>
+		public static function calcTangentBasis(idxs:Vector.<uint>,vData:Vector.<Number>) : Vector.<Number>
 		{
 			/*
 			let a be vector from p to q
@@ -153,12 +154,20 @@
 				var i0:uint = idxs[i];		// tri point index 0
 				var i1:uint = idxs[i+1];	// tri point index 1 
 				var i2:uint = idxs[i+2];	// tri point index 2
+				
+				var pay:Number = vData[i1*8+7] - vData[i0*8+7];
+				var ay:Number = pay;			
+				do {
+					var tmp=i0; i0=i1; i1=i2; i2=tmp;	
+					ay = vData[i1*8+7] - vData[i0*8+7];
+				} while (ay*ay>pay*pay);
+				tmp=i2; i2=i1; i1=i0; i0=tmp;
+				
 				var ax:Number = vData[i1*8+6] - vData[i0*8+6];
-				var ay:Number = vData[i1*8+7] - vData[i0*8+7];
+					ay		  = vData[i1*8+7] - vData[i0*8+7];
 				var bx:Number = vData[i2*8+6] - vData[i0*8+6];
 				var by:Number = vData[i2*8+7] - vData[i0*8+7];
-				
-				var q:Number = 1/(bx-ax*by/ay);
+				var q:Number = -1/(bx-ax*by/ay);
 				var p:Number = -q*by/ay;
 				
 				// find tangent vector from p q
@@ -183,7 +192,8 @@
 			for (i=0; i<n; i++)	
 			{
 				v = RV[i];
-				if (v.w>1)	{v.x/=v.w; v.y/=v.w; v.z/=v.w;}
+				var nv:Vector3D = new Vector3D(vData[i*8+0],vData[i*8+1],vData[i*8+2]);
+				v = nv.crossProduct(v).crossProduct(nv);
 				if (v.length>0) v.normalize();
 				R.push(	vData[i*8+0],vData[i*8+1],vData[i*8+2],	// vx,vy,vz
 						vData[i*8+3],vData[i*8+4],vData[i*8+5],	// nx,ny,nz
@@ -210,13 +220,13 @@
 			m.jointsData = jointsData;
 			m.collisionGeom = collisionGeom;	// pass collision geometry over!
 			m.texture = texture;
-			m.specMap = specMap;
+			m.normMap = normMap;
 			m.ambient = ambient;
 			m.fog = fog;
 			m.vertexBuffer = vertexBuffer;
 			m.indexBuffer = indexBuffer;
 			m.textureBuffer = textureBuffer;
-			m.specMapBuffer = specMapBuffer;
+			m.normMapBuffer = normMapBuffer;
 			m.envMapBuffer = envMapBuffer;
 			m.stdProgram = stdProgram;
 			m.shadowProgram = shadowProgram;
@@ -305,12 +315,12 @@
 			}
 						
 			var tex:BitmapData = this.texture;
-			var spec:BitmapData = this.specMap;
+			var spec:BitmapData = this.normMap;
 			for (var i:int=childMeshes.length-1; i>-1; i--)
 			{
 				var c:Mesh = childMeshes[i].mergeTree();
 				if (tex==null)	tex = c.texture;
-				if (spec==null)	spec = c.specMap;
+				if (spec==null)	spec = c.normMap;
 				var cT:Matrix4x4 = c.transform;
 				var vD:Vector.<Number> = c.vertData;
 				var iD:Vector.<uint> = c.idxsData;
@@ -349,8 +359,8 @@
 			m.ambient = ambient;
 			m.transform = transform;
 			m.setGeometry(nV,nI);
-			m.setTexture(tex);
-			m.setSpecularMap(spec);
+			m.texture = tex;
+			m.normMap = spec;
 			return m;
 		}//endfunction
 				
@@ -478,8 +488,8 @@
 			var tex:BitmapData = null;
 			var fsmfn:Function = function(M:Mesh,pM:Mesh):Boolean
 			{
-				tex = M.specMap;
-				return M.specMap==null || M.vertData==null || M.idxsData==null;
+				tex = M.normMap;
+				return M.normMap==null || M.vertData==null || M.idxsData==null;
 			}
 			treeTransverse(this,fsmfn);
 			
@@ -805,41 +815,78 @@
 		/**
 		* sets/overrides new specular map data to this mesh
 		*/
-		public function setSpecularMap(bmd:BitmapData,propagate:Boolean=false) : void
+		public function setNormalAndSpecularMap(normBmd:BitmapData=null,specBmd:BitmapData=null,propagate:Boolean=false) : BitmapData
 		{
-			var specFn:Function = function(M:Mesh,pM:Mesh):Boolean
+			// ----- set normal and specular maps to same size
+			var bw:int=0; var bh:int=0;
+			if (normBmd!=null) 
 			{
-				if ((M.specMap==null && bmd!=null) || (M.specMap!=null && bmd==null))
+				normBmd = powOf2Size(normBmd); 
+				if (bw<normBmd.width) bw=normBmd.width;
+				if (bh<normBmd.height) bh=normBmd.height;
+			}
+			if (specBmd!=null) 
+			{
+				specBmd = powOf2Size(specBmd);
+				if (bw<specBmd.width) bw=specBmd.width;
+				if (bh<specBmd.height) bh=specBmd.height;
+			}
+			if (normBmd!=null && (normBmd.width!=bw || normBmd.height!=bh))
+			{	// resize to same bw,bh
+				var nbmd:BitmapData = new BitmapData(bw,bh,false,0x000000);
+				nbmd.draw(normBmd,new Matrix(bw/normBmd.width,0,0,bh/normBmd.height));
+				normBmd = nbmd;
+			}
+			if (specBmd!=null)
+			{	// greyscale specular map
+				specBmd.applyFilter(specBmd,
+									new Rectangle(0,0,specBmd.width,specBmd.height),
+									new Point(0,0),
+									new ColorMatrixFilter([	0.34,0.34,0.34,0,0,
+															0.34,0.34,0.34,0,0,
+															0.34,0.34,0.34,0,0,
+															0,0,0,1,0]));
+				if (specBmd.width!=bw || specBmd.height!=bh)
+				{	// resize to same bw,bh
+					var sbmd:BitmapData = new BitmapData(bw,bh,false,0x000000);
+					sbmd.draw(specBmd,new Matrix(bw/specBmd.width,0,0,bh/specBmd.height));
+					specBmd = sbmd;
+				}
+			}
+			
+			// ----- combine the normal and specular map together
+			var combined:BitmapData = null;
+			if (bw>0 && bh>0)
+			{
+				combined = new BitmapData(bw,bh,true,0xFF8080FF);
+				var rect:Rectangle = new Rectangle(0,0,bw,bh);
+				var pt:Point = new Point(0,0);
+				if (normBmd!=null)
+				{
+					combined.copyChannel(normBmd,rect,pt,BitmapDataChannel.RED,BitmapDataChannel.RED);
+					combined.copyChannel(normBmd,rect,pt,BitmapDataChannel.GREEN,BitmapDataChannel.GREEN);
+					combined.copyChannel(normBmd,rect,pt,BitmapDataChannel.BLUE,BitmapDataChannel.BLUE);
+				}
+				if (specBmd!=null)
+					combined.copyChannel(specBmd,rect,pt,BitmapDataChannel.RED,BitmapDataChannel.ALPHA);
+			}
+			
+			var nsFn:Function = function(M:Mesh,pM:Mesh):Boolean
+			{
+				if ((M.normMap==null && combined!=null) || (M.normMap!=null && combined==null))
 				{
 					M.stdProgram=null;
 					M.shadowProgram=null;
 				}	
-				M.specMap = powOf2Size(bmd);
-				M.specMapBuffer = uploadTextureBuffer(M.specMap);
+				M.normMap = powOf2Size(combined);
+				M.normMapBuffer = uploadTextureBuffer(M.normMap);
 				return propagate;
 			}
-			treeTransverse(this,specFn);
+			treeTransverse(this,nsFn);
+			
+			return combined;
 		}//endfunction
-		
-		/**
-		* sets/overrides new specular map data to this mesh
-		*/
-		public function setNormalMap(bmd:BitmapData,propagate:Boolean=false) : void
-		{
-			var normFn:Function = function(M:Mesh,pM:Mesh):Boolean
-			{
-				if ((M.normMap==null && bmd!=null) || (M.normMap!=null && bmd==null))
-				{
-					M.stdProgram=null;
-					M.shadowProgram=null;
-				}	
-				M.normMap = powOf2Size(bmd);
-				M.specMapBuffer = uploadTextureBuffer(M.normMap);
-				return propagate;
-			}
-			treeTransverse(this,normFn);
-		}//endfunction
-		
+				
 		/**
 		* sets up the environment map for this mesh... so it is reflecting mirror like
 		*/
@@ -1010,7 +1057,7 @@
 						
 			// ----- upload texture and specmap ---------------------
 			textureBuffer = uploadTextureBuffer(texture);
-			specMapBuffer = uploadTextureBuffer(specMap);
+			normMapBuffer = uploadTextureBuffer(normMap);
 							
 			// ----- create mesh custom shader program --------------
 			if (lightsConst==null)	lightsConst = Vector.<Number>();
@@ -1028,8 +1075,8 @@
 			if (texture!=null && numLights==0 && ambient.x==1 && ambient.y==1 && ambient.z==1 && ambient.w==0 && fog.w==0)
 				fragSrc = "tex oc, v2, fs0 <2d,linear,mipnone,repeat>\n";
 			else 
-				fragSrc = _stdFragSrc(numLights,texture!=null,specMap!=null,fog.w>0,false,envMapBuffer!=null);
-			var shadowFragSrc:String = _stdFragSrc(numLights,texture!=null,specMap!=null,fog.w>0,true,envMapBuffer!=null);
+				fragSrc = _stdFragSrc(numLights,texture!=null,normMap!=null,fog.w>0,false,envMapBuffer!=null);
+			var shadowFragSrc:String = _stdFragSrc(numLights,texture!=null,normMap!=null,fog.w>0,true,envMapBuffer!=null);
 			
 			stdProgram = createProgram(vertSrc,fragSrc);
 			shadowProgram = createProgram(vertSrc,shadowFragSrc);
@@ -1526,17 +1573,17 @@
 						// ----- sets texture info for this mesh to context3d -----------
 						if (prevTex!=M.textureBuffer) context3d.setTextureAt(0,M.textureBuffer);	// fs0 to hold texture data
 						var envBuff:CubeTexture=null;
-						var specBuff:Texture=null;
+						var normBuff:Texture=null;
 						if (n>0 && M.illuminable) 
 						{
 							envBuff=M.envMapBuffer;
-							specBuff=M.specMapBuffer;	
+							normBuff=M.normMapBuffer;	
 						}
 						if (prevEnv!=envBuff) context3d.setTextureAt(1,envBuff);	// fs1 to hold env map data
-						if (prevSpec!=specBuff) context3d.setTextureAt(2,specBuff);	// fs2 to hold specular map data
+						if (prevNorm!=normBuff) context3d.setTextureAt(2,normBuff);	// fs2 to hold normal map data overriden specBuff
 						prevTex=M.textureBuffer;
 						prevEnv=envBuff;
-						prevSpec=specBuff;
+						prevNorm=normBuff;
 						
 						// ----- set shadowing comparison depth texture to read from ----
 						if (shadows && n>0 && M.illuminable) 
@@ -1591,7 +1638,7 @@
 			var i:uint=0;
 			//for (i=1; i<8; i++)	context3d.setVertexBufferAt(i,null);
 			for (i=0; i<n+3; i++)	context3d.setTextureAt(i, null);
-			prevTex=null; prevEnv=null; prevSpec=null;
+			prevTex=null; prevEnv=null; prevNorm=null;
 			
 			var R:Vector.<Mesh> = new Vector.<Mesh>();
 			M.flattenTree(new Matrix4x4(),R);	// get list of meshes to be rendered
@@ -1930,7 +1977,6 @@
 										sin_a2*r2,cos_a2*r2,z2,	// vertex
 										sin_a2*r2,cos_a2*r2,z2,	// normal
 										(i+1)/n,1);
-					
 					if (r1>0) A.push(	sin_a2*r1,cos_a2*r1,z1,	// vertex
 										sin_a2*r1,cos_a2*r1,z1,	// normal
 										(i+1)/n,0,
@@ -1939,7 +1985,7 @@
 										i/n,0,
 										sin_a2*r2,cos_a2*r2,z2,	// vertex
 										sin_a2*r2,cos_a2*r2,z2,	// normal
-										(i+1)/n,1);
+										(i+1)/n,1);	
 				}
 				else
 				{
@@ -2278,8 +2324,8 @@
 			var C2:Vector.<Number> = createTrianglesBand(len/8,len/50,len/5,len,3);
 			
 			var r:Number = len/10;
-			var lon:uint = 16;
-			var lat:uint = 8;
+			var lon:uint = 12;
+			var lat:uint = 6;
 			var S:Vector.<Number> = new Vector.<Number>();
 			var i:int=0;
 			while (i<lat)
@@ -3184,7 +3230,7 @@
 		*				fc_n*2+3= [px,py,pz,0.125]	// light n position
 		*				fc_n*2+4= [r,g,b,1]			// light n color, 
 		*/
-		private static function _stdFragSrc(numLights:uint,hasTex:Boolean=true,hasSpec:Boolean=true,fog:Boolean=false,shadowMap:Boolean=false,envMap:Boolean=false) : String
+		private static function _stdFragSrc(numLights:uint,hasTex:Boolean=true,hasNorm:Boolean=true,fog:Boolean=false,shadowMap:Boolean=false,envMap:Boolean=false) : String
 		{
 			var s:String = "";
 			
@@ -3224,21 +3270,18 @@
 					"mov ft6 fc0.xxxx\n"+				// ft6= 0,0,0,0 specular highlights accu
 					"nrm ft1.xyz, v1.xyz\n";			// normalized vertex normal
 			
-			/*
 			if (hasNorm)	// if has normal mapping
 				s+=	"tex ft7, v2, fs2 <2d,linear,repeat>\n"+	// ft7=sample normMap with UV
 				"mul ft7.xyz, ft7.xyz, fc0.www\n"+				// ft7.xyz *= 2
 				"sub ft7.xyz, ft7.xyz, fc0.zzz\n"+				// ft7.xyz = ft7.xyz*2-1
 				"nrm ft7.xyz, ft7.xyz\n"+						// normalized normal map value
 				"nrm ft2.xyz, v4.xyz\n"+						// ft2=normalized tangent
-				"crs tf3.xyz, ft1.xyz, ft2.xyz\n"+				// ft3=co tangent
+				"crs ft3.xyz, ft1.xyz, ft2.xyz\n"+				// ft3=co tangent
 				"mul ft2.xyz, ft2.xyz, ft7.xxx\n"+				// ft2=x*tangent
 				"mul ft3.xyz, ft3.xyz, ft7.yyy\n"+				// ft3=y*co tangent
 				"mul ft1.xyz, ft1.xyz, ft7.zzz\n"+				// ft1=z*normal
 				"add ft1.xyz, ft1.xyz, ft2.xyz\n"+
 				"add ft1.xyz, ft1.xyz, ft3.xyz\n";				// ft1=perturbed normal
-				
-				*/
 			
 			// ----- for each light point, op codes to handle lighting mix ----
 			for (var i:int=0; i<numLights; i++)
@@ -3282,9 +3325,9 @@
 			s += _envMapFragSrc()+						// uses ft7 output to ft4
 				"max ft6, ft6, ft4\n";					// include environment map 
 						
-			if (hasSpec)
-			s+=	"tex ft7, v2, fs2 <2d,linear,repeat>\n"+	// ft7=sample specMap with UV
-				"mul ft6, ft6, ft7\n";						// specMap*light color*sf
+			if (hasNorm)
+			s+=	"tex ft7, v2, fs2 <2d,linear,repeat>\n"+	// ft7=sample normSpecMap with UV
+				"mul ft6, ft6, ft7.wwww\n";					// normMapspecFactor*light color*sf
 									
 			s+= "add ft5, ft5, ft6\n"+					// combine specular highlight with diffuse color 
 				"mov ft5.w, ft0.w\n"+					// move alpha value of texture over
@@ -4065,7 +4108,6 @@ class CollisionGeometry
 							taz+s*tpz+t*tqz,1);	// return intersection point within tri
 	}//endfunction
 }//endclass
-
 
 /**
 * private class to hold collision triangle data
