@@ -16,6 +16,7 @@
 	import flash.display3D.VertexBuffer3D;
 	import flash.display3D.textures.CubeTexture;
 	import flash.display3D.textures.Texture;
+	import flash.display3D.textures.TextureBase;
 	import flash.events.Event;
 	import flash.events.IOErrorEvent;
 	import flash.geom.Matrix;
@@ -52,8 +53,8 @@
 		private var fog:Vector3D;						// linear fog blending factors {red,green,blue,maxDist}
 				
 		public var trisCnt:int;							// number of triangles to tell program to draw
-		public var texture:BitmapData;					// texture of current mesh, can be null
-		private var normMap:BitmapData;					// combined normal and specular map of current mesh, can be null
+		private var texture:BitmapData;					// texture of current mesh, can be null
+		private var normMap:BitmapData;					// normal map of current mesh, can be null
 		private var vertexBuffer:VertexBuffer3D;		// Where Vertex positions for this mesh will be stored
 		private var indexBuffer:IndexBuffer3D;			// Order of Vertices to be drawn for this mesh
 		private var textureBuffer:Texture;				// uploaded Texture of this mesh
@@ -129,16 +130,16 @@
 			let a be vector from p to q
 			let b be vector from p to r
 
-			p(ax,ay) + q(bx,by) s.t    (x axis)
-			p*ax + q*bx = 1  ... (1)
-			p*ay + q*by = 0  ... (2)
+			p(ax,ay) + q(bx,by) s.t    (y axis)
+			p*ay + q*by = 1  ... (1)
+			p*ax + q*bx = 0  ... (2)
 
-			p*ay = -q*by
-			p = -q*by/ay   ... (2a)
+			p*ax = -q*bx
+			p = -q*bx/ax   ... (2a)
 			sub in (1)
 
-			-q*ax*by/ay + q*bx = 1
-			q = 1/(bx-ax*by/ay)
+			-q*ay*bx/ax + q*by = 1
+			q = 1/(by-ay*bx/ax)
 			*/
 			
 			var i:int=0;
@@ -155,20 +156,20 @@
 				var i1:uint = idxs[i+1];	// tri point index 1 
 				var i2:uint = idxs[i+2];	// tri point index 2
 				
-				var pay:Number = vData[i1*8+7] - vData[i0*8+7];
-				var ay:Number = pay;			
+				var pax:Number = vData[i1*8+6] - vData[i0*8+6];
+				var ax:Number = pax;			
 				do {
 					var tmp=i0; i0=i1; i1=i2; i2=tmp;	
-					ay = vData[i1*8+7] - vData[i0*8+7];
-				} while (ay*ay>pay*pay);
+					ax = vData[i1*8+6] - vData[i0*8+6];
+				} while (ax*ax>pax*pax);
 				tmp=i2; i2=i1; i1=i0; i0=tmp;
 				
-				var ax:Number = vData[i1*8+6] - vData[i0*8+6];
-					ay		  = vData[i1*8+7] - vData[i0*8+7];
+					ax	 	  = vData[i1*8+6] - vData[i0*8+6];
+				var	ay:Number = vData[i1*8+7] - vData[i0*8+7];
 				var bx:Number = vData[i2*8+6] - vData[i0*8+6];
 				var by:Number = vData[i2*8+7] - vData[i0*8+7];
-				var q:Number = -1/(bx-ax*by/ay);
-				var p:Number = -q*by/ay;
+				var q:Number = 1/(by-ay*bx/ax);
+				var p:Number = -q*bx/ax;
 				
 				// find tangent vector from p q
 				ax = vData[i1*8] - vData[i0*8];
@@ -193,8 +194,11 @@
 			{
 				v = RV[i];
 				var nv:Vector3D = new Vector3D(vData[i*8+0],vData[i*8+1],vData[i*8+2]);
-				v = nv.crossProduct(v).crossProduct(nv);
-				if (v.length>0) v.normalize();
+				if (v.length>0)
+				{	// cross product to make sure 90 degrees
+					v = nv.crossProduct(v);
+					v.scaleBy(-1/v.length);
+				}
 				R.push(	vData[i*8+0],vData[i*8+1],vData[i*8+2],	// vx,vy,vz
 						vData[i*8+3],vData[i*8+4],vData[i*8+5],	// nx,ny,nz
 						v.x,v.y,v.z,	// tx,ty,tz
@@ -750,10 +754,11 @@
 		/**
 		* skinningData : [	va0 = texU,texV	 					// UV for this point
 		*					va1 = wnx,wny,wnz,transIdx 			// weight normal 1
-		*					va2 = wvx,wvy,wvz,transIdx+weight 	// weight vertex 1
-		*					va3 = wvx,wvy,wvz,transIdx+weight  	// weight vertex 2
-		*					va4 = wvx,wvy,wvz,transIdx+weight  	// weight vertex 3
-		*					va5 = wvx,wvy,wvz,transIdx+weight ]	// weight vertex 4... 
+		* 					va2 = wtx,wty,wtz,transIdx 			// weight tangent 1
+		*					va3 = wvx,wvy,wvz,transIdx+weight 	// weight vertex 1
+		*					va4 = wvx,wvy,wvz,transIdx+weight  	// weight vertex 2
+		*					va5 = wvx,wvy,wvz,transIdx+weight  	// weight vertex 3
+		*					va6 = wvx,wvy,wvz,transIdx+weight ]	// weight vertex 4... 
 		*/
 		public function setSkinning(skinningData:Vector.<Number>=null,indicesData:Vector.<uint>=null) : void
 		{
@@ -766,7 +771,7 @@
 			
 			if (skinningData==null || indicesData==null) return;
 			
-			var numVertices:int = vertData.length/22;
+			var numVertices:int = vertData.length/26;
 			trisCnt = idxsData.length/3;		//sets number of triangles to render
 						
 			if (numVertices==0 || trisCnt==0) {vertData=null; idxsData=null; return;}
@@ -774,7 +779,7 @@
 			if (context3d==null)	return;
 						
 			// ----- set context vertices data ----------------------------------------
-			vertexBuffer=context3d.createVertexBuffer(numVertices, 22);	// vertex vx,vy,vz, nx,ny,nz, u,v
+			vertexBuffer=context3d.createVertexBuffer(numVertices, 26);	
 			vertexBuffer.uploadFromVector(vertData, 0, numVertices);
 			
 			// ----- set context indices data -----------------------------------------
@@ -842,9 +847,9 @@
 				specBmd.applyFilter(specBmd,
 									new Rectangle(0,0,specBmd.width,specBmd.height),
 									new Point(0,0),
-									new ColorMatrixFilter([	0.34,0.34,0.34,0,0,
-															0.34,0.34,0.34,0,0,
-															0.34,0.34,0.34,0,0,
+									new ColorMatrixFilter([	0.3,0.3,0.3,0,26,
+															0,1,0,0,0,
+															0,0,1,0,0,
 															0,0,0,1,0]));
 				if (specBmd.width!=bw || specBmd.height!=bh)
 				{	// resize to same bw,bh
@@ -867,7 +872,7 @@
 					combined.copyChannel(normBmd,rect,pt,BitmapDataChannel.GREEN,BitmapDataChannel.GREEN);
 					combined.copyChannel(normBmd,rect,pt,BitmapDataChannel.BLUE,BitmapDataChannel.BLUE);
 				}
-				if (specBmd!=null)
+				if (specBmd != null)
 					combined.copyChannel(specBmd,rect,pt,BitmapDataChannel.RED,BitmapDataChannel.ALPHA);
 			}
 			
@@ -1124,7 +1129,7 @@
 			
 			return prog;
 		}//endfunction
-				
+		
 		/**
 		* to return as a flattened list the children and grandchildrens of this mesh, self included
 		*/
@@ -1136,7 +1141,7 @@
 			for (var i:int=childMeshes.length-1; i>-1; i--)
 				childMeshes[i].flattenTree(workingTransform,conV);
 		}//endfunction
-						
+		
 		/**
 		* given line start posn (lox,loy,loz) and line vector (lvx,lvy,lvz)
 		* returns {vx,vy,vz,nx,ny,nz} the 3D position and surface normal where line hits this mesh (optionally after applying transform T), or null
@@ -1309,7 +1314,7 @@
 					childMeshes[i].transform.translate(-mean.x,-mean.y,-mean.z);
 				}
 		}//endfunction
-				
+		
 		/**
 		* returns the position (vx,vy,vz) and direction & magnitude (nx,ny,nz) for line directly under cursor
 		*/
@@ -1396,7 +1401,7 @@
 			context3d.clear(0,0,0,1,0,0,0xFFFFFFFF);	// clear depth buffer to 0s
 			context3d.present();
 		}//endfunction
-						
+		
 		/**
 		* renders given mesh (branch) onto stage3D
 		*/
@@ -1522,6 +1527,7 @@
 							{
 								context3d.setVertexBufferAt(4, null);
 								context3d.setVertexBufferAt(5, null);
+								context3d.setVertexBufferAt(6, null);
 							}
 						}
 						else if (M.dataType==_typeP)
@@ -1534,6 +1540,7 @@
 								context3d.setVertexBufferAt(3, null);
 								context3d.setVertexBufferAt(4, null);
 								context3d.setVertexBufferAt(5, null);
+								context3d.setVertexBufferAt(6, null);
 							}
 							context3d.setProgramConstantsFromVector("vertex", 5,M.jointsData);	// the joint transforms data
 						}
@@ -1547,6 +1554,7 @@
 								context3d.setVertexBufferAt(3, null);
 								context3d.setVertexBufferAt(4, null);
 								context3d.setVertexBufferAt(5, null);
+								context3d.setVertexBufferAt(6, null);
 							}
 							context3d.setProgramConstantsFromVector("vertex", 5,M.jointsData);	// the meshes orientation and positions data
 						}
@@ -1554,12 +1562,19 @@
 						{
 							context3d.setVertexBufferAt(0, M.vertexBuffer, 0, "float2");	// va0 to expect texU texV
 							if (M.illuminable)
+							{
 								context3d.setVertexBufferAt(1, M.vertexBuffer, 2, "float4");// va1 to expect wnx,wny,wnx,transIdx
-							else	context3d.setVertexBufferAt(1, null);
-							context3d.setVertexBufferAt(2, M.vertexBuffer, 6, "float4");	// va2 to expect weight vertex 1
-							context3d.setVertexBufferAt(3, M.vertexBuffer, 10,"float4");	// va3 to expect weight vertex 2
-							context3d.setVertexBufferAt(4, M.vertexBuffer, 14,"float4");	// va4 to expect weight vertex 3
-							context3d.setVertexBufferAt(5, M.vertexBuffer, 18,"float4");	// va5 to expect weight vertex 4
+								context3d.setVertexBufferAt(2, M.vertexBuffer, 6, "float4");// va2 to expect wtx,wty,wtx,transIdx
+							}
+							else
+							{
+								context3d.setVertexBufferAt(1, null);
+								context3d.setVertexBufferAt(2, null);
+							}
+							context3d.setVertexBufferAt(3, M.vertexBuffer, 10, "float4");	// va3 to expect weight vertex 1
+							context3d.setVertexBufferAt(4, M.vertexBuffer, 14,"float4");	// va4 to expect weight vertex 2
+							context3d.setVertexBufferAt(5, M.vertexBuffer, 18,"float4");	// va5 to expect weight vertex 3
+							context3d.setVertexBufferAt(6, M.vertexBuffer, 22,"float4");	// va6 to expect weight vertex 4
 							context3d.setProgramConstantsFromVector("vertex", 5,M.jointsData);	// the joint transforms data
 						}
 						prevType = M.dataType;
@@ -1806,7 +1821,7 @@
 				gettingContext=false;
 				var stage3d:Stage3D=Stage3D(ev.currentTarget);
 				context3d=stage3d.context3D;
-				context3d.enableErrorChecking=true;	//**********************************
+				context3d.enableErrorChecking=false;	//**********************************
 				debugTrace("got context3d, driverInfo:"+context3d.driverInfo);
 				configBackBufferAndCallBack();
 			}//endfunction
@@ -2928,7 +2943,7 @@
 			}
 			return true;
 		}//endfunction
-				
+		
 		/**
 		* creates a fps counter readout textfield that finds average of time taken in n frames 
 		*/
@@ -3072,15 +3087,16 @@
 			
 			return s;
 		}//endfunction
-				
+		
 		/**
-		* MD5 GPU Skinning! Vertex Shader Code		(135 instructions)
+		* MD5 GPU Skinning! Vertex Shader Code		(165 instructions)
 		* inputs:		va0 = texU,texV	 					// UV for this point
 		*				va1 = wnx,wny,wnz,transIdx 			// weight normal 1
-		*				va2 = wvx,wvy,wvz,transIdx+weight 	// weight vertex 1
-		*				va3 = wvx,wvy,wvz,transIdx+weight  	// weight vertex 2
-		*				va4 = wvx,wvy,wvz,transIdx+weight  	// weight vertex 3
-		*				va5 = wvx,wvy,wvz,transIdx+weight 	// weight vertex 4
+		* 				va2 = wtx,wty,wtz,0		 			// weight tangent 1
+		*				va3 = wvx,wvy,wvz,transIdx+weight 	// weight vertex 1
+		*				va4 = wvx,wvy,wvz,transIdx+weight  	// weight vertex 2
+		*				va5 = wvx,wvy,wvz,transIdx+weight  	// weight vertex 3
+		*				va6 = wvx,wvy,wvz,transIdx+weight 	// weight vertex 4
 		* constants:	vc[i] = qx,qy,qz,0, 	// orientation quaternion
 		*				vc[i+1] = tx,ty,tz,0	// translation
 		* outputs:		vt0 = vertex  vt1 = normal  vt2 = texU,texV
@@ -3094,7 +3110,7 @@
 			"mov vt2.z, vt0.x\n";					// vt2 = texU,texV,0,farClip
 			
 			// ----- calculate vertex from weights --------
-			for (var i:int=2; i<6; i++)	// loop 4 times 31 instrs
+			for (var i:int=3; i<7; i++)	// loop 4 x 29 = 116 instrs
 			{
 				s+= 
 				"mov vt7.w,	va"+i+".w\n"+				// vt7.w = transIdx+weight
@@ -3108,51 +3124,56 @@
 				
 				"mov vt4.xyz, va"+i+".xyz\n"+			// vt4.xyz = wvx,wvy,wvz
 				"mov vt4.w, vt2.z\n"+					// vt4.xyzw = wvx,wvy,wvz,0
-				_quatRotVertSrc()+						// vt6.xyz=rotated wvx,wvy,wvz
-				"add vt6.xyz, vt6.xyz, vc[vt2.w+1]\n"+	// vt6.xyz=rotated translated wvx,wvy,wvz
-				"mul vt6.xyz, vt6.xyz, vt7.yyy\n"+		// vt6.xyz=weighted transformed wvx,wvy,wvz
+				_quatRotVertSrc()+						// vt4.xyz=rotated wvx,wvy,wvz
+				"add vt4.xyz, vt4.xyz, vc[vt2.w+1]\n"+	// vt4.xyz=rotated translated wvx,wvy,wvz
+				"mul vt4.xyz, vt4.xyz, vt7.yyy\n"+		// vt4.xyz=weighted transformed wvx,wvy,wvz
 				
-				"add vt0.xyz, vt0.xyz, vt6.xyz\n";		// accu to vertex val
+				"add vt0.xyz, vt0.xyz, vt4.xyz\n";		// vt0 = accu vertex val
 			}
 			
-			// ----- calculate normal ---------------------
-			if (hasLights)
+			// ----- calculate normal and tangent -----------------------------
+			if (hasLights)				// 45 instrs
 			{
 				s+=
 				"mov vt4, va1\n"+					// vt4.xyzw = wnx,wny,wnz,transIdx
 				"mov vt3, vc[vt4.w]\n"+				// vt3 = orientation quaternion for normal
 				"dp3 vt3.w, vt3.xyz, vt3.xyz\n"+	// vt3.w = xx+yy+zz
 				"sub vt3.w, vt0.w, vt3.w\n"+		// vt3.w = 1-xx-yy-zz
-				"sqt vt3.w, vt3.w\n"+				// vt3.w = sqrt(1-xx-yy-zz) quat real component
+				"sqt vt3.w, vt3.w\n" +				// vt3.w = sqrt(1-xx-yy-zz) quat real component
+				"mov vt7, vt3\n" +					// vt7 = copy of quaternion
 				"mov vt4.w, vt2.z\n"+				// vt4.xyzw = wnx,wny,wnz,0
 				_quatRotVertSrc()+					// vt6.xyz = rotated wnx,wny,wnz
-				"nrm vt1.xyz, vt6.xyz\n";			// vt1=normalized nx,ny,nz
+				"nrm vt1.xyz, vt4.xyz\n"+			// vt1=normalized nx,ny,nz
+				
+				"mov vt3, vt7\n" + 					// vt3 = quaternion
+				"mov vt4, va2\n" +					// vt4.xyzw = wtx,wty,wtz,0
+				_quatRotVertSrc() +					// vt6.xyz = rotated wtx,wty,wtz
+				"nrm vt3.xyz, vt4.xyz\n";			// vt1=normalized tx,ty,tz
 			}			
 			return s;
 		}//endfunction
 		
 		/**
-		* Quaternion rotation (19 instructions)
+		* Quaternion rotation (17 instructions)
 		* inputs:	vt3=ux,uy,uz,a	// rotation quaternion
 		*			vt4=px,py,pz,0	// point to rotate
-		* output:	vt6.xyz=rotated point
+		* output:	vt4.xyz=rotated point
 		*/
 		private static function _quatRotVertSrc() : String
 		{
 			var s:String = 
-			_quatMulVertSrc(3,4, 6, 5)+			// vt6 = quatMul vt3 vt4
-			"mov vt4, vt3\n"+			// vt4 = ux,uy,uz,a
-			"neg vt4.xyz, vt4.xyz\n"+	// vt4 = -ux,-uy,-uz,a
-			"mov vt3, vt6\n"+			// vt3 = quatMul results
-			_quatMulVertSrc(3,4, 6, 5);
+			_quatMulVertSrc(3,4, 6, 5)+	// vt6 = quatMul vt3 vt4
+			"neg vt3.xyz, vt3.xyz\n"+	// vt3 = -ux,-uy,-uz,a
+			_quatMulVertSrc(6, 3, 4, 5);
 			return s;
 		}//endfunction
-
+		
 		/**
 		* Quaternion multiplication (8 instructions)
 		* inputs:  	vti0=ux,uy,uz,a	// a,b,c are the real components
 		*			vti1=vx,vy,vz,b
 		* output:	vto0=wx,wy,wz,c	// multiplication result
+		* 			vti0=ux,uy,uz,a	// unchanged from input!
 		*/
 		private static function _quatMulVertSrc(i0:uint,i1:uint,o0:uint,w0:uint) : String
 		{
@@ -3170,11 +3191,11 @@
 		}//endfunction
 		
 		/**
-		* Standard vertex shader perspective render src (18 instructions)
+		* Standard vertex shader perspective render src (19 instructions max)
 		* inputs: 		vt0 = vx,vy,vz,1 untransformed vertex
 		*				vt1 = nx,ny,nz,0 untransformed nomal
 		*				vt2 = texU,texV
-		*				vt3 = nx,ny,nz,0 untransformed tangent
+		*				vt3 = tx,ty,tz,0 untransformed tangent
 		* constants:	vc0=[nearClip,farClip,focalL,aspectRatio], vc1-vc4=TransformMatrix
 		* frag outputs:	v0= transformed vertex 
 		*				v1= transformed normal 
@@ -3271,18 +3292,19 @@
 					"nrm ft1.xyz, v1.xyz\n";			// normalized vertex normal
 			
 			if (hasNorm)	// if has normal mapping
-				s+=	"tex ft7, v2, fs2 <2d,linear,repeat>\n"+	// ft7=sample normMap with UV
-				"mul ft7.xyz, ft7.xyz, fc0.www\n"+				// ft7.xyz *= 2
-				"sub ft7.xyz, ft7.xyz, fc0.zzz\n"+				// ft7.xyz = ft7.xyz*2-1
-				"nrm ft7.xyz, ft7.xyz\n"+						// normalized normal map value
-				"nrm ft2.xyz, v4.xyz\n"+						// ft2=normalized tangent
-				"crs ft3.xyz, ft1.xyz, ft2.xyz\n"+				// ft3=co tangent
-				"mul ft2.xyz, ft2.xyz, ft7.xxx\n"+				// ft2=x*tangent
-				"mul ft3.xyz, ft3.xyz, ft7.yyy\n"+				// ft3=y*co tangent
-				"mul ft1.xyz, ft1.xyz, ft7.zzz\n"+				// ft1=z*normal
+			s +="tex ft7, v2, fs2 <2d,linear,repeat>\n" +	// ft7=sample normMap with UV
+				"div ft7.xyz, ft7.xyz, ft7.www\n"+			// remove the premultiplied 
+				"mul ft7.xyz, ft7.xyz, fc0.www\n"+			// ft7.xyz *= 2
+				"sub ft7.xyz, ft7.xyz, fc0.zzz\n"+			// ft7.xyz = ft7.xyz*2-1
+				"nrm ft2.xyz, v4.xyz\n"+					// ft2=normalized tangent x
+				"crs ft3.xyz, ft1.xyz, ft2.xyz\n"+			// ft3=co tangent y
+				"mul ft2.xyz, ft2.xyz, ft7.xxx\n"+			// ft2=x*tangent
+				"mul ft3.xyz, ft3.xyz, ft7.yyy\n"+			// ft3=y*co tangent
+				"mul ft1.xyz, ft1.xyz, ft7.zzz\n"+			// ft1=z*normal
 				"add ft1.xyz, ft1.xyz, ft2.xyz\n"+
-				"add ft1.xyz, ft1.xyz, ft3.xyz\n";				// ft1=perturbed normal
-			
+				"add ft1.xyz, ft1.xyz, ft3.xyz\n"+			// ft1=perturbed normal
+				"nrm ft1.xyz, ft1.xyz\n";
+						
 			// ----- for each light point, op codes to handle lighting mix ----
 			for (var i:int=0; i<numLights; i++)
 			{
@@ -3295,14 +3317,15 @@
 					"mul ft3, ft0, ft3\n"+  			// ft3=multiply fragment color by intensity from texture
 					"mul ft3, ft3, fc"+(i*2+4)+"\n"+	// ft3=multiply fragment color by light color
 					
-					// ----- calculate blinn phong halfway vector for spec lighting
-					"neg ft4, v0\n" + 					// ft4=vector from pt to viewer
-					"nrm ft4.xyz, ft4\n"+				// ft4=normalized view vector
-					"add ft4, ft2, ft4\n"+				// ft4=halfway vector
-					"nrm ft4.xyz, ft4\n" +				// ft4=normalize halfway vector
-					"dp3 ft4, ft4, ft1.xyz\n";			// ft4=dot normal with halfway vector (scalar)
-								
-				// ----- calculate specular reflection
+					// ----- calculate phong lighting
+					"nrm ft4.xyz, v0.xyz\n" +			// ft4 = normalized vector to point
+					"dp3 ft4.w, ft4.xyz, ft1.xyz\n" + 	// ft4.w = ptVector . normal
+					"add ft4.w, ft4.w, ft4.w\n" +		// ft4.w = 2*(ptVector . normal)
+					"mul ft7.xyz, ft1.xyz, ft4.www\n" + // ft5.xyz = 2(ptVector . normal)normal
+					"sub ft4.xyz, ft4.xyz, ft7.xyz\n" + // ft4.xyz = reflected vector to point
+					"dp3 ft4.xyz, ft4.xyz, ft2.xyz\n";	// ft4=magnitude of specular
+				
+					// ----- calculate specular reflection
 				s+= "mov ft7.x, fc"+(i*2+3)+".w\n"+		// ft7.x=0.125
 					"sub ft7.y, fc0.z, ft7.x\n"+		// ft7.y=1-0.125
 					"sub ft7.y, ft4.x, ft7.y\n"+  		// ft7.y=norm-(1-0.125)
@@ -3316,10 +3339,11 @@
 				//s+= _cubeShadowFragSrc(i,numLights)+	// uses ft7 output to ft4
 					"mul ft3, ft3, ft4\n"+				// set diff to 0 if under shadows
 					"mul ft2, ft2, ft4\n";				// set spec to 0 if under shadows
-					
+				
 				s+= "max ft5, ft5, ft3 \n"+				// ft5=accumulated diffuse color
 					"add ft6, ft6, ft2 \n";				// ft6=accumulated specular highlight
 			}//endfor
+			
 			
 			if (envMap)
 			s += _envMapFragSrc()+						// uses ft7 output to ft4
@@ -3345,11 +3369,12 @@
 				"add oc, ft7, ft6\n";
 			else
 			s+=	"max oc, ft1, ft5\n";				// light and output the color
+			
 			return s;
 		}//endfunction
 		
 		/**
-		* environment mapping with cube map
+		* environment mapping with cube map		(7 instrs)
 		* outputs:	 ft4 = env map colors
 		*/
 		private static function _envMapFragSrc() : String
