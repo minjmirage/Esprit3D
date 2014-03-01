@@ -1686,6 +1686,7 @@
 					for (i=0; i<R.length; i++)
 					{
 						M = R[i];
+						prevType=M.dataType;	// so streams can be set correctly
 						if (M.castsShadow && M.vertexBuffer!=null && M.indexBuffer!=null)
 						{
 							// ----- set transform parameters for this mesh to context3d ----
@@ -1705,6 +1706,7 @@
 								context3d.setVertexBufferAt(3, null);
 								context3d.setVertexBufferAt(4, null);
 								context3d.setVertexBufferAt(5, null);
+								context3d.setVertexBufferAt(6, null);
 							}
 							else if (M.dataType==_typeP)
 							{
@@ -1714,6 +1716,7 @@
 								context3d.setVertexBufferAt(3, null);
 								context3d.setVertexBufferAt(4, null);
 								context3d.setVertexBufferAt(5, null);
+								context3d.setVertexBufferAt(6, null);
 								context3d.setProgramConstantsFromVector("vertex", 5,M.jointsData);	// the joint transforms data
 							}
 							else if (M.dataType==_typeM)
@@ -1724,16 +1727,18 @@
 								context3d.setVertexBufferAt(3, null);
 								context3d.setVertexBufferAt(4, null);
 								context3d.setVertexBufferAt(5, null);
+								context3d.setVertexBufferAt(6, null);
 								context3d.setProgramConstantsFromVector("vertex", 5,M.jointsData);	// the joint transforms data
 							}
 							else if (M.dataType==_typeS)
 							{
 								context3d.setVertexBufferAt(0, M.vertexBuffer, 0, "float2");	// va0 to expect texU texV
 								context3d.setVertexBufferAt(1, null);							// no need for normal,transIdx
-								context3d.setVertexBufferAt(2, M.vertexBuffer, 6, "float4");	// va2 to expect weight vertex,transIdx
-								context3d.setVertexBufferAt(3, M.vertexBuffer, 10,"float4");	// va3 to expect weight vertex,transIdx
-								context3d.setVertexBufferAt(4, M.vertexBuffer, 14,"float4");	// va4 to expect weight vertex,transIdx
-								context3d.setVertexBufferAt(5, M.vertexBuffer, 18,"float4");	// va5 to expect weight vertex,transIdx
+								context3d.setVertexBufferAt(2, null);
+								context3d.setVertexBufferAt(3, M.vertexBuffer, 10, "float4");	// va2 to expect weight vertex,transIdx
+								context3d.setVertexBufferAt(4, M.vertexBuffer, 14,"float4");	// va3 to expect weight vertex,transIdx
+								context3d.setVertexBufferAt(5, M.vertexBuffer, 18,"float4");	// va4 to expect weight vertex,transIdx
+								context3d.setVertexBufferAt(6, M.vertexBuffer, 22,"float4");	// va5 to expect weight vertex,transIdx
 								context3d.setProgramConstantsFromVector("vertex", 5,M.jointsData);	// the joint transforms data
 							}
 								
@@ -3293,13 +3298,14 @@
 			
 			if (hasNorm)	// if has normal mapping
 			s +="tex ft7, v2, fs2 <2d,linear,repeat>\n" +	// ft7=sample normMap with UV
-				"div ft7.xyz, ft7.xyz, ft7.www\n"+			// remove the premultiplied 
+				"div ft7.xyz, ft7.xyz, ft7.www\n"+			// need this because bitmapData channels are premultiplied with alpha
 				"mul ft7.xyz, ft7.xyz, fc0.www\n"+			// ft7.xyz *= 2
 				"sub ft7.xyz, ft7.xyz, fc0.zzz\n"+			// ft7.xyz = ft7.xyz*2-1
 				"nrm ft2.xyz, v4.xyz\n"+					// ft2=normalized tangent x
 				"crs ft3.xyz, ft1.xyz, ft2.xyz\n"+			// ft3=co tangent y
 				"mul ft2.xyz, ft2.xyz, ft7.xxx\n"+			// ft2=x*tangent
 				"mul ft3.xyz, ft3.xyz, ft7.yyy\n"+			// ft3=y*co tangent
+				"neg ft3.xyz, ft3.xyz\n"+
 				"mul ft1.xyz, ft1.xyz, ft7.zzz\n"+			// ft1=z*normal
 				"add ft1.xyz, ft1.xyz, ft2.xyz\n"+
 				"add ft1.xyz, ft1.xyz, ft3.xyz\n"+			// ft1=perturbed normal
