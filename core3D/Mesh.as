@@ -197,7 +197,7 @@
 				if (v.length>0)
 				{	// cross product to make sure 90 degrees
 					v = nv.crossProduct(v);
-					v.scaleBy(-1/v.length);
+					v.scaleBy(1/v.length);
 				}
 				R.push(	vData[i*8+0],vData[i*8+1],vData[i*8+2],	// vx,vy,vz
 						vData[i*8+3],vData[i*8+4],vData[i*8+5],	// nx,ny,nz
@@ -3305,7 +3305,6 @@
 				"crs ft3.xyz, ft1.xyz, ft2.xyz\n"+			// ft3=co tangent y
 				"mul ft2.xyz, ft2.xyz, ft7.xxx\n"+			// ft2=x*tangent
 				"mul ft3.xyz, ft3.xyz, ft7.yyy\n"+			// ft3=y*co tangent
-				"neg ft3.xyz, ft3.xyz\n"+
 				"mul ft1.xyz, ft1.xyz, ft7.zzz\n"+			// ft1=z*normal
 				"add ft1.xyz, ft1.xyz, ft2.xyz\n"+
 				"add ft1.xyz, ft1.xyz, ft3.xyz\n"+			// ft1=perturbed normal
