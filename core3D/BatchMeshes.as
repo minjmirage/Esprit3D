@@ -29,94 +29,91 @@ package core3D
 				M = Vector.<Mesh>([Mesh.createCube(1,1,1)]);
 			}
 			
-			skin = new Mesh();
-			skin.setTexture(M[0].findTexture());
-			skin.setSpecularMap(M[0].findSpecularMap());
-			skin.setMeshes();	// set as empty
+			skin = M[0].mergeTree();
 						
 			_init = function():void
 			{
+				renderCnts = new Vector.<int>(M.length);
+				triCnts = new Vector.<int>(M.length);
+				var totalVariety:int = M.length;
 			
-			renderCnts = new Vector.<int>(M.length);
-			triCnts = new Vector.<int>(M.length);
-			var totalVariety:int = M.length;
+				var i:int=0;
+				var j:int=0;
+				var n:uint=0;
+				var m:Mesh=null;
+				var totalParticles:uint=0;		// total number of particles renderable
 			
-			var i:int=0;
-			var j:int=0;
-			var n:uint=0;
-			var m:Mesh=null;
-			var totalParticles:uint=0;		// total number of particles renderable
-			
-			// ----- pre compress geometries  
-			for (j=totalVariety-1; j>=0; j--)
-			{
-				m = M[j];
-				if (m.getDataType()!=Mesh._typeV)	
+				// ----- pre compress geometries  
+				for (j=totalVariety-1; j>=0; j--)
 				{
-					Mesh.debugTrace("BatchMeshes Error! invalid input mesh of type:"+m.getDataType());
-					m = Mesh.createTetra();
-				}
-				
-				var nm:Mesh = new Mesh();
-				nm.addChild(m);				// adding as child so that transform is applied during merge
-				m = nm.mergeTree();
-				if (m.vertData==null || m.idxsData==null)
-				{
-					Mesh.debugTrace("BatchMeshes Error! empty mesh given!");
-					m = Mesh.createTetra();
-				}
-				if (compress) m.compressGeometry();		// reuse vertices data whenever possible
-				M[j] = m;
-				triCnts[j] = m.idxsData.length/3;
-			}//endfor
-						
-			// ----- write geometries data to be batch rendered			
-			var V:Vector.<Number> = new Vector.<Number>();	// vertices vector
-			var I:Vector.<uint> = new Vector.<uint>();		// indices vector
-			var cOff:uint=5;		// constants offset, vc5 onwards unused
-			var iOff:uint=0;		// triangles indices offset
-			for (i=0; i<60; i++)	// create 60 duplicate meshes
-			{
-				m = M[i%totalVariety];
-				var oV:Vector.<Number> = m.vertData;	// vertices, normals and UV data [vx,vy,vz,nx,ny,nz,u,v, ...] can be null
-				var oI:Vector.<uint> = m.idxsData;		// indices to vertices forming triangles [a1,a2,a3, b1,b2,b3, ...]	
-				
-				if (V.length/10+oV.length/8<21000)		// if still can fit more
-				{
-					j=0;
-					n=oV.length;
-					while (j<n)			// append to main V	
+					m = M[j];
+					if (m.getDataType()!=Mesh._typeV)	
 					{
-						V.push(	oV[j+0],oV[j+1],oV[j+2],	// vx,vy,vz
-								oV[j+3],oV[j+4],oV[j+5],	// nx,ny,nz
-								oV[j+6],oV[j+7],			// texU,texV,
-								cOff+i*2,cOff+i*2+1);		// idx,idx+1 for orientation and positioning
-						j+=8;
+						Mesh.debugTrace("BatchMeshes Error! invalid input mesh of type:"+m.getDataType());
+						m = Mesh.createTetra();
 					}
-					
-					j=0;
-					n=oI.length;
-					while (j<n)	{I.push(oI[j]+iOff); j++;}	// append to main I
-					iOff+=oV.length/8;
 				
-					totalParticles++;
-				}
-				else
+					var nm:Mesh = new Mesh();
+					nm.addChild(m);				// adding as child so that transform is applied during merge
+					m = nm.mergeTree();
+					if (m.vertData==null || m.idxsData==null)
+					{
+						Mesh.debugTrace("BatchMeshes Error! empty mesh given!");
+						m = Mesh.createTetra();
+					}
+					if (compress) m.compressGeometry();		// reuse vertices data whenever possible
+					M[j] = m;
+					triCnts[j] = m.idxsData.length/3;
+				}//endfor
+						
+				// ----- write geometries data to be batch rendered			
+				var V:Vector.<Number> = new Vector.<Number>();	// vertices vector
+				var I:Vector.<uint> = new Vector.<uint>();		// indices vector
+				var cOff:uint=5;		// constants offset, vc5 onwards unused
+				var iOff:uint=0;		// triangles indices offset
+				for (i=0; i<60; i++)	// try to put 60 meshes inside
 				{
-					Mesh.debugTrace("BatchMeshes total renderable:"+totalParticles+"\n");
-					i=60;	// end loop
-				}
-			}//endfor
+					m = M[i%totalVariety];
+					var oV:Vector.<Number> = Mesh.calcTangentBasis(m.idxsData,m.vertData);	// vertices, normals and UV data [vx,vy,vz,nx,ny,nz,tx,ty,tz,u,v, ...] can be null
+					var oI:Vector.<uint> = m.idxsData;		// indices to vertices forming triangles [a1,a2,a3, b1,b2,b3, ...]		
+				
+					if (V.length/13+oV.length/11<65535)		// if still can fit more
+					{
+						j=0;
+						n=oV.length;
+						while (j<n)			// append to main V	
+						{
+							V.push(	oV[j+0],oV[j+1],oV[j+2],	// vx,vy,vz
+									oV[j+3],oV[j+4],oV[j+5],	// nx,ny,nz
+									oV[j+6],oV[j+7],oV[j+8],	// tx,ty,tz
+									oV[j+9],oV[j+10],			// texU,texV,
+									cOff+i*2,cOff+i*2+1);		// idx,idx+1 for orientation and positioning
+							j+=11;
+						}
+					
+						j=0;
+						n=oI.length;
+						while (j<n)	{I.push(oI[j]+iOff); j++;}	// append to main I
+						iOff+=oV.length/11;
+				
+						totalParticles++;
+					}
+					else
+					{
+						Mesh.debugTrace("BatchMeshes total renderable:"+totalParticles+"\n");
+						i=60;	// end loop
+					}
+				}//endfor
 			
-			// ----- create skin mesh for this emitter --------------
-			skin.setMeshes(V,I);
+				// ----- create skin mesh for this emitter --------------
+				skin.setMeshes(V,I);
 			
-			// ----- default mesh positions -------------------------
-			MData = new Vector.<VertexData>();
-			for (i=0; i<totalParticles; i++)	// 60 GPU batch processed meshes
-				MData.push(new VertexData());
+				// ----- default mesh positions -------------------------
+				MData = new Vector.<VertexData>();
+				for (i=0; i<totalParticles; i++)	// 60 GPU batch processed meshes
+					MData.push(new VertexData());
 			
-			_init = null;
+				_init = null;
 			}//endfunction
 		}//endConstructor
 		

@@ -469,38 +469,6 @@
 		}//endfunction
 		
 		/**
-		* convenience function to find existing texture within this tree
-		*/
-		public function findTexture() : BitmapData
-		{
-			var tex:BitmapData = null;
-			var ftfn:Function = function(M:Mesh,pM:Mesh):Boolean
-			{
-				tex = M.texture;
-				return M.texture==null || M.vertData==null || M.idxsData==null;
-			}
-			treeTransverse(this,ftfn);
-			
-			return tex;
-		}//endfunction
-		
-		/**
-		* convenience function to find existing texture within this tree
-		*/
-		public function findSpecularMap() : BitmapData
-		{
-			var tex:BitmapData = null;
-			var fsmfn:Function = function(M:Mesh,pM:Mesh):Boolean
-			{
-				tex = M.normMap;
-				return M.normMap==null || M.vertData==null || M.idxsData==null;
-			}
-			treeTransverse(this,fsmfn);
-			
-			return tex;
-		}//endfunction
-		
-		/**
 		* convenience function to get total vertices data
 		*/
 		public function getVertLen(): uint
@@ -735,7 +703,7 @@
 			
 			if (vertData==null || idxsData==null) return;
 						
-			var numVertices:int = vertData.length/10;
+			var numVertices:int = vertData.length/13;
 			trisCnt = idxsData.length/3;		//sets number of triangles to render
 			
 			if (numVertices==0 || trisCnt==0) {vertData=null; idxsData=null; return;}
@@ -743,7 +711,7 @@
 			if (context3d==null)	return;
 			
 			// ----- set context vertices data ----------------------------------------
-			vertexBuffer=context3d.createVertexBuffer(numVertices, 10);	// vertex x,y,z, nx,ny,nz, u,v,idx,idx+1
+			vertexBuffer=context3d.createVertexBuffer(numVertices, 13);	// vertex x,y,z, nx,ny,nz, tx,ty,tz, u,v,idx,idx+1
 			vertexBuffer.uploadFromVector(vertData, 0, numVertices);
 			
 			// ----- set context indices data -----------------------------------------
@@ -1548,10 +1516,10 @@
 						{
 							context3d.setVertexBufferAt(0, M.vertexBuffer, 0, "float3");	// va0 to expect vertices
 							context3d.setVertexBufferAt(1, M.vertexBuffer, 3, "float3");	// va1 to expect normals
-							context3d.setVertexBufferAt(2, M.vertexBuffer, 6, "float4")		// va2 to expect UV and idx
+							context3d.setVertexBufferAt(2, M.vertexBuffer, 6, "float3");	// va2 to expect tangents
+							context3d.setVertexBufferAt(3, M.vertexBuffer, 9, "float4")		// va3 to expect UV and idx
 							if (prevType!=_typeM)
 							{
-								context3d.setVertexBufferAt(3, null);
 								context3d.setVertexBufferAt(4, null);
 								context3d.setVertexBufferAt(5, null);
 								context3d.setVertexBufferAt(6, null);
@@ -1686,7 +1654,7 @@
 					for (i=0; i<R.length; i++)
 					{
 						M = R[i];
-						prevType=M.dataType;	// so streams can be set correctly
+						prevType=M.dataType;	// so streams can be set correctly on next normal render
 						if (M.castsShadow && M.vertexBuffer!=null && M.indexBuffer!=null)
 						{
 							// ----- set transform parameters for this mesh to context3d ----
@@ -1723,8 +1691,8 @@
 							{
 								context3d.setVertexBufferAt(0, M.vertexBuffer, 0, "float3");	// va0 to expect vertices
 								context3d.setVertexBufferAt(1, M.vertexBuffer, 3, "float3");	// va1 to expect normals
-								context3d.setVertexBufferAt(2, M.vertexBuffer, 6, "float4")		// va2 to expect UV and idx, idx+1
-								context3d.setVertexBufferAt(3, null);
+								context3d.setVertexBufferAt(2, M.vertexBuffer, 6, "float3");	// va2 to expect tangents
+								context3d.setVertexBufferAt(3, M.vertexBuffer, 9, "float4")		// va3 to expect UV and idx, idx+1
 								context3d.setVertexBufferAt(4, null);
 								context3d.setVertexBufferAt(5, null);
 								context3d.setVertexBufferAt(6, null);
@@ -1826,7 +1794,7 @@
 				gettingContext=false;
 				var stage3d:Stage3D=Stage3D(ev.currentTarget);
 				context3d=stage3d.context3D;
-				context3d.enableErrorChecking=false;	//**********************************
+				context3d.enableErrorChecking=true;	//**********************************
 				debugTrace("got context3d, driverInfo:"+context3d.driverInfo);
 				configBackBufferAndCallBack();
 			}//endfunction
@@ -3061,7 +3029,8 @@
 		* Batch meshes rendering Vertex Shader Code
 		* inputs:		va0 = vx,vy,vz			//	vertex data	
 		*				va1 = nx,ny,nz			//	normal data
-		*				va2 = texU,texV,i,i+1	//	UV data + constants index
+		*				va2 = tx,ty,tz			//	tangent data
+		*				va3 = texU,texV,i,i+1	//	UV data + constants index
 		* constants:	vc[i] = qx,qy,qz,sc, 	// orientation quaternion
 		*				vc[i+1] = tx,ty,tz,0	// translation
 		* outputs:		vt0 = vertex	vt1 = normal  	vt2 = texU,texV
@@ -3070,7 +3039,7 @@
 		{
 			var s:String =
 			"mov vt0.xyzw, vc4.xyzw\n"+				// vt0 = 0,0,0,1
-			"mov vt2, va2\n"+						// vt2 = texU,texV,idx,idx+1
+			"mov vt2, va3\n"+						// vt2 = texU,texV,idx,idx+1
 			
 			// ----- orientate vertex
 			"mov vt3, vc[vt2.z]\n"+					// vt3 = qx,qy,qz,sc quaternion axis component + obj scale
@@ -3080,16 +3049,21 @@
 			"sub vt3.w, vt0.w, vt3.w\n"+			// vt3.w = 1-xx-yy-zz
 			"sqt vt3.w, vt3.w\n"+					// vt3.w = sqrt(1-xx-yy-zz) quat real component
 			"mov vt7, vt3\n"+						// vt7 = qx,qy,qz,w	quaternion copy
-			_quatRotVertSrc()+						// vt6.xyz=rotated vx,vy,vz
-			"add vt0.xyz, vt6.xyz, vc[vt2.w],xyz\n"+// vt0 = nvx,nvy,nvz,1 rotated translated vertex
+			_quatRotVertSrc()+						// vt4.xyz = rotated vx,vy,vz
+			"add vt0.xyz, vt4.xyz, vc[vt2.w],xyz\n"+// vt0 = nvx,nvy,nvz,1 rotated translated vertex
 						
 			// ----- orientate normal
 			"mov vt3, vt7\n"+						// vt3 = qx,qy,qz,a quaternion
-			"mov vt4, va1\n"+						// vt4.xyz = nx,ny,nz	normal to transform
-			_quatRotVertSrc()+						// vt6.xyz=rotated nx,ny,nz
-			"mov vt1, vt6\n"+						// vt1 = nnx,nny,nnz rotated normal
-			"mov vt1.w, vc4.x\n";					// vt1 = nnx,nny,nnz,0 rotated normal
-			
+			"mov vt4, va1\n"+						// vt4.xyz = nx,ny,nz	normal to rotate
+			_quatRotVertSrc()+						// vt4.xyz=rotated nx,ny,nz
+			"mov vt1, vt4\n"+						// vt1 = nnx,nny,nnz rotated normal
+			"mov vt1.w, vc4.x\n"+					// vt1 = nnx,nny,nnz,0 rotated normal
+			"mov vt3, vt7\n"+						// vt3 = qx,qy,qz,a quaternion
+			"mov vt4, va2\n"+						// vt4.xyz = tx,ty,tz	tangent to rotate
+			"mov vt4.w, vc4.x\n"+					// 
+			_quatRotVertSrc()+						// vt4.xyz = rotated nx,ny,nz
+			"mov vt3, vt4\n"+						// vt3.xyz = rotated nx,ny,nz
+			"mov vt3.w, vc4.x\n";					// vt3 = nnx,nny,nnz,0 rotated normal
 			return s;
 		}//endfunction
 		

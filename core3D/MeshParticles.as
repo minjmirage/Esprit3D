@@ -26,72 +26,68 @@ package core3D
 		*/
 		public function MeshParticles(m:Mesh,compress:Boolean=true) : void
 		{
-			skin = new Mesh();
-			skin.setTexture(m.findTexture());
-			skin.setSpecularMap(m.findSpecularMap());
-			skin.setMeshes();	// set as empty
-			particleMesh = m;
+			skin = m.mergeTree();
 			
 			_init = function():void
 			{
-			
-			if (m.getDataType()!=Mesh._typeV)	
-			{
-				Mesh.debugTrace("MeshParticles Error! invalid input mesh of type:"+m.getDataType());
-				m = Mesh.createTetra();
-			}
-			
-			var nm:Mesh = new Mesh();
-			nm.addChild(m);				// adding as child so that transform is applied during merge
-			m = nm.mergeTree();
-			if (m.vertData==null || m.idxsData==null)
-			{
-				Mesh.debugTrace("MeshParticles Error! empty mesh given!");
-				m = Mesh.createTetra();
-			}
-			if (compress) m.compressGeometry();		// reuse vertices data whenever possible
-			
-			var oV:Vector.<Number> = m.vertData;	// vertices, normals and UV data [vx,vy,vz,nx,ny,nz,u,v, ...] can be null
-			var oI:Vector.<uint> = m.idxsData;		// indices to vertices forming triangles [a1,a2,a3, b1,b2,b3, ...]		
-						
-			// ----- set as 0 drawn by default
-			numLiveParticles = 0;
-			numTrisPerMesh = oI.length/3;
-			totalParticles = Math.min(60,21000/(oV.length/8));
-			//if (totalParticles<60 && Mesh.debugTf!=null)	Mesh.debugTrace("MeshParticles total renderable:"+totalParticles+"\n");
-			
-			var V:Vector.<Number> = new Vector.<Number>();
-			var I:Vector.<uint> = new Vector.<uint>();
-			var cOff:uint=5;		// constants offset, vc5 onwards unused
-			var iOff:uint=0;		// triangles indices offset
-			for (var i:int=0; i<totalParticles; i++)	// create 60 duplicate meshes
-			{
-				var j:uint=0;
-				var n:uint=oV.length;
-				while (j<n)			// append to main V	
+				if (m.getDataType()!=Mesh._typeV)	
 				{
-					V.push(	oV[j+0],oV[j+1],oV[j+2],	// vx,vy,vz
-							oV[j+3],oV[j+4],oV[j+5],	// nx,ny,nz
-							oV[j+6],oV[j+7],			// texU,texV,
-							cOff+i*2,cOff+i*2+1);		// idx,idx+1 for orientation and positioning
-					j+=8;
+					Mesh.debugTrace("MeshParticles Error! invalid input mesh of type:"+m.getDataType());
+					m = Mesh.createTetra();
 				}
-				
-				j=0;
-				n=oI.length;
-				while (j<n)	{I.push(oI[j]+iOff); j++;}	// append to main I
-				iOff+=oV.length/8;
-			}
+			
+				var nm:Mesh = new Mesh();
+				nm.addChild(m);				// adding as child so that transform is applied during merge
+				m = nm.mergeTree();
+				if (m.vertData==null || m.idxsData==null)
+				{
+					Mesh.debugTrace("MeshParticles Error! empty mesh given!");
+					m = Mesh.createTetra();
+				}
+				if (compress) m.compressGeometry();		// reuse vertices data whenever possible
+			
+				var oV:Vector.<Number> = Mesh.calcTangentBasis(m.idxsdata,m.vertData);	// vertices, normals and UV data [vx,vy,vz,nx,ny,nz,tx,ty,tz,u,v, ...] can be null
+				var oI:Vector.<uint> = m.idxsData;		// indices to vertices forming triangles [a1,a2,a3, b1,b2,b3, ...]		
 						
-			// ----- create skin mesh for this emitter --------------
-			skin.setMeshes(V,I);
+				// ----- set as 0 drawn by default
+				numLiveParticles = 0;
+				numTrisPerMesh = oI.length/3;
+				totalParticles = Math.min(60,65535/(oV.length/11));
+				//if (totalParticles<60 && Mesh.debugTf!=null)	Mesh.debugTrace("MeshParticles total renderable:"+totalParticles+"\n");
 			
-			// ----- default mesh positions -------------------------
-			MData = new Vector.<VertexData>();
-			for (i=0; i<totalParticles; i++)	// 60 GPU batch processed meshes
-				MData.push(new VertexData());
+				var V:Vector.<Number> = new Vector.<Number>();
+				var I:Vector.<uint> = new Vector.<uint>();
+				var cOff:uint=5;		// constants offset, vc5 onwards unused
+				var iOff:uint=0;		// triangles indices offset
+				for (var i:int=0; i<totalParticles; i++)	// create 60 duplicate meshes
+				{
+					var j:uint=0;
+					var n:uint=oV.length;
+					while (j<n)			// append to main V	
+					{
+						V.push(	oV[j+0],oV[j+1],oV[j+2],	// vx,vy,vz
+								oV[j+3],oV[j+4],oV[j+5],	// nx,ny,nz
+								oV[j+6],oV[j+7],oV[j+8],	// tx,ty,tz
+								oV[j+9],oV[j+10],			// texU,texV,
+								cOff+i*2,cOff+i*2+1);		// idx,idx+1 for orientation and positioning
+						j+=11;
+					}
+				
+					j=0;
+					n=oI.length;
+					while (j<n)	{I.push(oI[j]+iOff); j++;}	// append to main I
+					iOff+=oV.length/11;
+				}
+						
+				// ----- create skin mesh for this emitter --------------
+				skin.setMeshes(V,I);
 			
-			_init = null;
+				// ----- default mesh positions -------------------------
+				MData = new Vector.<VertexData>();
+				for (i=0; i<totalParticles; i++)	// 60 GPU batch processed meshes
+					MData.push(new VertexData());
+			
+				_init = null;
 			}//endfunction
 			
 		}//endConstructor
