@@ -14,7 +14,7 @@ package core3D
 				
 		public var numLiveParticles:uint=0;		// number of live meshes to render
 		
-		private var MData:Vector.<VertexData>;	// position, orientation, and scaling and of each mesh
+		public var MData:Vector.<VertexData>;	// position, orientation, and scaling and of each mesh
 		private var totalParticles:uint=60;		// total number of particles renderable
 		
 		private var numTrisPerMesh:uint = 0;
@@ -46,7 +46,7 @@ package core3D
 				}
 				if (compress) m.compressGeometry();		// reuse vertices data whenever possible
 			
-				var oV:Vector.<Number> = Mesh.calcTangentBasis(m.idxsdata,m.vertData);	// vertices, normals and UV data [vx,vy,vz,nx,ny,nz,tx,ty,tz,u,v, ...] can be null
+				var oV:Vector.<Number> = Mesh.calcTangentBasis(m.idxsData,m.vertData);	// vertices, normals and UV data [vx,vy,vz,nx,ny,nz,tx,ty,tz,u,v, ...] can be null
 				var oI:Vector.<uint> = m.idxsData;		// indices to vertices forming triangles [a1,a2,a3, b1,b2,b3, ...]		
 						
 				// ----- set as 0 drawn by default
