@@ -377,7 +377,7 @@
 					var pax:Number = _V[i1].u - _V[i0].u;
 					var ax:Number = pax;			
 					do {
-						var tmp=i0; i0=i1; i1=i2; i2=tmp;	
+						var tmp:uint=i0; i0=i1; i1=i2; i2=tmp;	
 						ax = _V[i1].u - _V[i0].u;
 					} while (ax*ax>pax*pax);
 					tmp=i2; i2=i1; i1=i0; i0=tmp;

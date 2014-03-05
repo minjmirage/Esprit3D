@@ -45,6 +45,7 @@
 		public var jointsData:Vector.<Number>;			// joints position and orientation data for GPU skinning
 		public var transform:Matrix4x4;					// local transform matrix of this mesh
 		public var castsShadow:Boolean = true;			// specifies if this mesh geometry casts shadow
+		public var useMipMapping:Boolean = false;		// specifies whether to use mipmapping to render this mesh
 		public var workingTransform:Matrix4x4;			// calculated global transform for this mesh during rendering
 		
 		private var collisionGeom:CollisionGeometry;	// for detecting collision on this mesh geometry
@@ -159,7 +160,7 @@
 				var pax:Number = vData[i1*8+6] - vData[i0*8+6];
 				var ax:Number = pax;			
 				do {
-					var tmp=i0; i0=i1; i1=i2; i2=tmp;	
+					var tmp:uint=i0; i0=i1; i1=i2; i2=tmp;	
 					ax = vData[i1*8+6] - vData[i0*8+6];
 				} while (ax*ax>pax*pax);
 				tmp=i2; i2=i1; i1=i0; i0=tmp;
@@ -776,7 +777,7 @@
 					M.shadowProgram=null;
 				}
 				M.texture = powOf2Size(bmd);
-				M.textureBuffer = uploadTextureBuffer(M.texture,update);
+				M.textureBuffer = uploadTextureBuffer(M.texture,update,true);
 				if (M.blendSrc=="sourceAlpha" && M.blendDest=="one") {}
 				else if (M.texture!=null && M.texture.transparent)	M.setBlendMode("alpha");
 				else												M.setBlendMode("normal");
@@ -851,8 +852,8 @@
 					M.stdProgram=null;
 					M.shadowProgram=null;
 				}	
-				M.normMap = powOf2Size(combined);
-				M.normMapBuffer = uploadTextureBuffer(M.normMap);
+				M.normMap = combined;
+				M.normMapBuffer = uploadTextureBuffer(M.normMap,false,true);
 				return propagate;
 			}
 			treeTransverse(this,nsFn);
@@ -1029,15 +1030,15 @@
 			}
 						
 			// ----- upload texture and specmap ---------------------
-			textureBuffer = uploadTextureBuffer(texture);
-			normMapBuffer = uploadTextureBuffer(normMap);
+			textureBuffer = uploadTextureBuffer(texture,false,true);	// no update upload mips
+			normMapBuffer = uploadTextureBuffer(normMap,false,true);	// no update upload mips
 							
 			// ----- create mesh custom shader program --------------
 			if (lightsConst==null)	lightsConst = Vector.<Number>();
 			var numLights:uint = lightsConst.length/8;
 			if (dataType==_typeP)	illuminable=false;	// no lighting for particles
 			if (illuminable==false)	numLights=0;
-						
+			
 			var vertSrc:String = _stdPersVertSrc(numLights>0,fog.w>0);
 			if (dataType==_typeV)		vertSrc = _stdReadVertSrc() + vertSrc;
 			else if (dataType==_typeP)	vertSrc = _particlesVertSrc() + vertSrc;
@@ -1048,19 +1049,18 @@
 			if (texture!=null && numLights==0 && ambient.x==1 && ambient.y==1 && ambient.z==1 && ambient.w==0 && fog.w==0)
 				fragSrc = "tex oc, v2, fs0 <2d,linear,mipnone,repeat>\n";
 			else 
-				fragSrc = _stdFragSrc(numLights,texture!=null,normMap!=null,fog.w>0,false,envMapBuffer!=null);
-			var shadowFragSrc:String = _stdFragSrc(numLights,texture!=null,normMap!=null,fog.w>0,true,envMapBuffer!=null);
+				fragSrc = _stdFragSrc(numLights,texture!=null,useMipMapping,normMap!=null,fog.w>0,false,envMapBuffer!=null);
+			var shadowFragSrc:String = _stdFragSrc(numLights,texture!=null,useMipMapping,normMap!=null,fog.w>0,true,envMapBuffer!=null);
 			
 			stdProgram = createProgram(vertSrc,fragSrc);
 			shadowProgram = createProgram(vertSrc,shadowFragSrc);
 			progLightCnt = numLights;
 			
 			// ----- create depth texture render program ------------
-			//vertSrc = _depthTexPersVertSrc();
-			vertSrc = _depthCubePersVertSrc();
+			vertSrc = _depthCubePersVertSrc();	// common vert shader code
 			if (dataType==_typeV)		vertSrc = "mov vt0, va0\n" + vertSrc;
 			else if (dataType==_typeP)	vertSrc = _particlesVertSrc() + vertSrc;
-			else if (dataType==_typeM)	vertSrc = _meshesVertSrc() + vertSrc;
+			else if (dataType==_typeM)	vertSrc = _meshesVertSrc(false) + vertSrc;
 			else if (dataType==_typeS)	vertSrc = _skinningVertSrc(false) + vertSrc;
 			depthProgram = createProgram(vertSrc,_depthCubeFragSrc());
 			//debugTrace("setContext3DBuffers");
@@ -1517,7 +1517,7 @@
 							context3d.setVertexBufferAt(0, M.vertexBuffer, 0, "float3");	// va0 to expect vertices
 							context3d.setVertexBufferAt(1, M.vertexBuffer, 3, "float3");	// va1 to expect normals
 							context3d.setVertexBufferAt(2, M.vertexBuffer, 6, "float3");	// va2 to expect tangents
-							context3d.setVertexBufferAt(3, M.vertexBuffer, 9, "float4")		// va3 to expect UV and idx
+							context3d.setVertexBufferAt(3, M.vertexBuffer, 9, "float4");	// va3 to expect UV and idx
 							if (prevType!=_typeM)
 							{
 								context3d.setVertexBufferAt(4, null);
@@ -1546,13 +1546,13 @@
 							context3d.setProgramConstantsFromVector("vertex", 5,M.jointsData);	// the joint transforms data
 						}
 						prevType = M.dataType;
-										
+						
 						// ----- set program to use -------------------------------------
 						var prog:Program3D = M.stdProgram;			// use standard program
 						if (shadows) prog = M.shadowProgram;		// use shadow program
 						if (prevProg!=prog)		context3d.setProgram(prog);
 						prevProg = prog;
-												
+						
 						// ----- sets texture info for this mesh to context3d -----------
 						if (prevTex!=M.textureBuffer) context3d.setTextureAt(0,M.textureBuffer);	// fs0 to hold texture data
 						var envBuff:CubeTexture=null;
@@ -1581,7 +1581,7 @@
 						}
 						else 
 							for (j=0; j<n; j++)	context3d.setTextureAt(3+j, null);	// 3..n to hold light POV depth textures
-											
+						
 						// ----- enable alpha blending if transparent texture -----------
 						context3d.setDepthTest(M.depthWrite,"greater");			// whether to write to depth buffer
 						context3d.setBlendFactors(M.blendSrc,M.blendDest);		// set to specified blending
@@ -1690,8 +1690,8 @@
 							else if (M.dataType==_typeM)
 							{
 								context3d.setVertexBufferAt(0, M.vertexBuffer, 0, "float3");	// va0 to expect vertices
-								context3d.setVertexBufferAt(1, M.vertexBuffer, 3, "float3");	// va1 to expect normals
-								context3d.setVertexBufferAt(2, M.vertexBuffer, 6, "float3");	// va2 to expect tangents
+								context3d.setVertexBufferAt(1, null);
+								context3d.setVertexBufferAt(2, null);
 								context3d.setVertexBufferAt(3, M.vertexBuffer, 9, "float4")		// va3 to expect UV and idx, idx+1
 								context3d.setVertexBufferAt(4, null);
 								context3d.setVertexBufferAt(5, null);
@@ -1794,7 +1794,7 @@
 				gettingContext=false;
 				var stage3d:Stage3D=Stage3D(ev.currentTarget);
 				context3d=stage3d.context3D;
-				context3d.enableErrorChecking=true;	//**********************************
+				context3d.enableErrorChecking=false;	//**********************************
 				debugTrace("got context3d, driverInfo:"+context3d.driverInfo);
 				configBackBufferAndCallBack();
 			}//endfunction
@@ -1854,7 +1854,7 @@
 			else
 				return -1;		// dB-dA (descending)  dA-dB (ascending)
 		}//endfunction
-						
+		
 		/**
 		* create a sphere of given texture
 		*/
@@ -3033,9 +3033,9 @@
 		*				va3 = texU,texV,i,i+1	//	UV data + constants index
 		* constants:	vc[i] = qx,qy,qz,sc, 	// orientation quaternion
 		*				vc[i+1] = tx,ty,tz,0	// translation
-		* outputs:		vt0 = vertex	vt1 = normal  	vt2 = texU,texV
+		* outputs:		vt0 = vertex	vt1 = normal  	vt2 = texU,texV		vt3 = tangent
 		*/
-		private static function _meshesVertSrc() : String
+		private static function _meshesVertSrc(hasLights:Boolean=true) : String
 		{
 			var s:String =
 			"mov vt0.xyzw, vc4.xyzw\n"+				// vt0 = 0,0,0,1
@@ -3050,9 +3050,11 @@
 			"sqt vt3.w, vt3.w\n"+					// vt3.w = sqrt(1-xx-yy-zz) quat real component
 			"mov vt7, vt3\n"+						// vt7 = qx,qy,qz,w	quaternion copy
 			_quatRotVertSrc()+						// vt4.xyz = rotated vx,vy,vz
-			"add vt0.xyz, vt4.xyz, vc[vt2.w],xyz\n"+// vt0 = nvx,nvy,nvz,1 rotated translated vertex
+			"add vt0.xyz, vt4.xyz, vc[vt2.w].xyz\n";// vt0 = nvx,nvy,nvz,1 rotated translated vertex
 						
 			// ----- orientate normal
+			if (hasLights)
+			s+=
 			"mov vt3, vt7\n"+						// vt3 = qx,qy,qz,a quaternion
 			"mov vt4, va1\n"+						// vt4.xyz = nx,ny,nz	normal to rotate
 			_quatRotVertSrc()+						// vt4.xyz=rotated nx,ny,nz
@@ -3061,8 +3063,8 @@
 			"mov vt3, vt7\n"+						// vt3 = qx,qy,qz,a quaternion
 			"mov vt4, va2\n"+						// vt4.xyz = tx,ty,tz	tangent to rotate
 			"mov vt4.w, vc4.x\n"+					// 
-			_quatRotVertSrc()+						// vt4.xyz = rotated nx,ny,nz
-			"mov vt3, vt4\n"+						// vt3.xyz = rotated nx,ny,nz
+			_quatRotVertSrc()+						// vt4.xyz = rotated tx,ty,tz
+			"mov vt3, vt4\n"+						// vt3.xyz = rotated tx,ty,tz
 			"mov vt3.w, vc4.x\n";					// vt3 = nnx,nny,nnz,0 rotated normal
 			return s;
 		}//endfunction
@@ -3137,6 +3139,7 @@
 		* inputs:	vt3=ux,uy,uz,a	// rotation quaternion
 		*			vt4=px,py,pz,0	// point to rotate
 		* output:	vt4.xyz=rotated point
+		* 			vt6.xyz=quatMul vt3 vt4
 		*/
 		private static function _quatRotVertSrc() : String
 		{
@@ -3209,7 +3212,7 @@
 				"mov vt3.w, vc4.x\n" +			// vt3 = nx,ny,nz,0
 				"m33 vt3.xyz, vt3.xyz, vc1\n" +	// vt3=transformed tangent
 				"nrm vt3.xyz, vt3.xyz\n" + 		// vt3=normalized tangent
-				"mov v4, vt3\n";				// move tangent to fragment shader v3
+				"mov v4, vt3\n";				// move tangent to fragment shader v4
 			return s;
 		}//endfunction
 		
@@ -3230,15 +3233,17 @@
 		*				fc_n*2+3= [px,py,pz,0.125]	// light n position
 		*				fc_n*2+4= [r,g,b,1]			// light n color, 
 		*/
-		private static function _stdFragSrc(numLights:uint,hasTex:Boolean=true,hasNorm:Boolean=true,fog:Boolean=false,shadowMap:Boolean=false,envMap:Boolean=false) : String
+		private static function _stdFragSrc(numLights:uint,hasTex:Boolean=true,useMip:Boolean=true,hasNorm:Boolean=true,fog:Boolean=false,shadowMap:Boolean=false,envMap:Boolean=false) : String
 		{
 			var s:String = "";
+			var mip = "mipnone";
+			if (useMip) mip = "miplinear";
 			
 			// ----- frag shader optimization test --------------------------------------
 			if (numLights==0)
 			{
 				if (hasTex) 
-					s = "tex ft0, v2, fs0 <2d,linear,mipnone,repeat> \n" + 	// sample tex "tex ft0, v2, fs0 <2d,nearest,repeat> \n" + // sample tex
+					s = "tex ft0, v2, fs0 <2d,linear,"+mip+",repeat> \n" + 	// sample tex "tex ft0, v2, fs0 <2d,nearest,repeat> \n" + // sample tex
 						"mul ft0.xyz, ft0.xyz, fc1.xyz\n"; 			// mult ambient color
 						
 				
@@ -3262,7 +3267,7 @@
 		
 			// ----- upload lightpoints info ----------------------------------
 			if (hasTex)	
-				s =	"tex ft0, v2, fs0 <2d,linear,mipnone,repeat> \n"; 	// ft0=sample texture with UV use miplinear to enable mipmapping
+				s =	"tex ft0, v2, fs0 <2d,linear,"+mip+",repeat> \n"; 	// ft0=sample texture with UV use miplinear to enable mipmapping
 			else
 				s = "mov ft0, fc0.zzzz\n";				// ft0 = 1,1,1,1
 			
@@ -3271,7 +3276,7 @@
 					"nrm ft1.xyz, v1.xyz\n";			// normalized vertex normal
 			
 			if (hasNorm)	// if has normal mapping
-			s +="tex ft7, v2, fs2 <2d,linear,repeat>\n" +	// ft7=sample normMap with UV
+			s +="tex ft7, v2, fs2 <2d,linear,"+mip+",repeat>\n" +	// ft7=sample normMap with UV
 				"div ft7.xyz, ft7.xyz, ft7.www\n"+			// need this because bitmapData channels are premultiplied with alpha
 				"mul ft7.xyz, ft7.xyz, fc0.www\n"+			// ft7.xyz *= 2
 				"sub ft7.xyz, ft7.xyz, fc0.zzz\n"+			// ft7.xyz = ft7.xyz*2-1
@@ -3283,7 +3288,7 @@
 				"add ft1.xyz, ft1.xyz, ft2.xyz\n"+
 				"add ft1.xyz, ft1.xyz, ft3.xyz\n"+			// ft1=perturbed normal
 				"nrm ft1.xyz, ft1.xyz\n";
-						
+					
 			// ----- for each light point, op codes to handle lighting mix ----
 			for (var i:int=0; i<numLights; i++)
 			{
@@ -3329,7 +3334,7 @@
 				"max ft6, ft6, ft4\n";					// include environment map 
 						
 			if (hasNorm)
-			s+=	"tex ft7, v2, fs2 <2d,linear,repeat>\n"+	// ft7=sample normSpecMap with UV
+			s+=	"tex ft7, v2, fs2 <2d,linear,"+mip+",repeat>\n"+	// ft7=sample normSpecMap with UV
 				"mul ft6, ft6, ft7.wwww\n";					// normMapspecFactor*light color*sf
 									
 			s+= "add ft5, ft5, ft6\n"+					// combine specular highlight with diffuse color 
