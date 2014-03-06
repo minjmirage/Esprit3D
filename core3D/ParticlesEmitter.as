@@ -59,10 +59,10 @@
 			var f:Number = 1/nsp;
 			for (i=0; i<PData.length; i++)
 			{
-				V.push(-w2,-h2,0, 0,0, idxOff+i);	// x,y,z, u,v, idx top left 
-				V.push( w2,-h2,0, f,0, idxOff+i);	// x,y,z, u,v, idx top right 
-				V.push( w2, h2,0, f,f, idxOff+i);	// x,y,z, u,v, idx bottom right 
-				V.push(-w2, h2,0, 0,f, idxOff+i);	// x,y,z, u,v, idx bottom left 
+				V.push(-w2,-h2,0, 0,0, idxOff+i);		// vx,vy,vz, u,v, idx top left 
+				V.push( w2,-h2,0, f,0, idxOff+i);		// vx,vy,vz, u,v, idx top right 
+				V.push( w2, h2,0, f,f, idxOff+i);		// vx,vy,vz, u,v, idx bottom right 
+				V.push(-w2, h2,0, 0,f, idxOff+i);		// vx,vy,vz, u,v, idx bottom left 
 				
 				I.push(i*4+0,i*4+1,i*4+2);		// top right tri
 				I.push(i*4+0,i*4+2,i*4+3);		// bottom left tri

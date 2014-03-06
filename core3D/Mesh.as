@@ -19,6 +19,7 @@
 	import flash.display3D.textures.TextureBase;
 	import flash.events.Event;
 	import flash.events.IOErrorEvent;
+	import flash.geom.ColorTransform;
 	import flash.geom.Matrix;
 	import flash.geom.Point;
 	import flash.geom.Vector3D;
@@ -659,7 +660,7 @@
 		
 		/**
 		* sets batch rendered particles data and indices to this mesh
-		* particlesData : [x,y,z, u,v, idx,...]	point position, uv, vc translation idx
+		* particlesData : [vx,vy,vz, u,v,idx,...]	point position, uv, vc translation idx
 		*/
 		public function setParticles(particlesData:Vector.<Number>=null,indicesData:Vector.<uint>=null) : void
 		{
@@ -681,7 +682,7 @@
 			if (context3d==null)	return;
 						
 			// ----- set context vertices data ----------------------------------------
-			vertexBuffer=context3d.createVertexBuffer(numVertices, 6);	// vertex x,y,z, u,v, idx
+			vertexBuffer=context3d.createVertexBuffer(numVertices, 6);	// vertex vx,vy,vz, u,v, idx
 			vertexBuffer.uploadFromVector(vertData, 0, numVertices);
 			
 			// ----- set context indices data -----------------------------------------
@@ -795,7 +796,7 @@
 			var bw:int=0; var bh:int=0;
 			if (normBmd!=null) 
 			{
-				normBmd = powOf2Size(normBmd); 
+				normBmd = powOf2Size(normBmd);
 				if (bw<normBmd.width) bw=normBmd.width;
 				if (bh<normBmd.height) bh=normBmd.height;
 			}
@@ -3015,9 +3016,9 @@
 			
 			"mov vt4, va0\n" +							// vt4 = vx,vy,vz untransformed
 			"mov vt4.w, vc5.x\n"+						// vt4 = vx,vy,vz,0 untransformed
-			_quatRotVertSrc() + 						// vt6 = quat rotate vt4
-			"mul vt6.xyz, vt6.xyz, vt7.www\n" +			// vt6.xyz = scale*(vx,vy,vz)
-			"add vt0.xyz, vt6.xyz, vt7.xyz\n" +			// vt0.xyz = (vx,vy,vz) translated rotated point
+			_quatRotVertSrc() + 						// vt4 = quat rotate vt4
+			"mul vt4.xyz, vt4.xyz, vt7.www\n" +			// vt4.xyz = scale*(vx,vy,vz)
+			"add vt0.xyz, vt4.xyz, vt7.xyz\n" +			// vt0.xyz = (vx,vy,vz) translated rotated point
 			
 			//"add vt0.xyz, va0.xyz, vc[vt2.z].xyz\n" +	// TEST
 			
@@ -3236,7 +3237,7 @@
 		private static function _stdFragSrc(numLights:uint,hasTex:Boolean=true,useMip:Boolean=true,hasNorm:Boolean=true,fog:Boolean=false,shadowMap:Boolean=false,envMap:Boolean=false) : String
 		{
 			var s:String = "";
-			var mip = "mipnone";
+			var mip:String = "mipnone";
 			if (useMip) mip = "miplinear";
 			
 			// ----- frag shader optimization test --------------------------------------
