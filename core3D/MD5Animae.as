@@ -70,7 +70,8 @@
 				M.push(new Mesh());
 				//M[M.length-1].transform = new Matrix4x4().translate((M.length-1)*10,0,0);	// debug
 				M[M.length-1].setTexture(defaTex);
-				M[M.length-1].setAmbient(0.3,0.3,0.3,0.1);
+				M[M.length-1].setAmbient(0.3,0.3,0.3);
+				M[M.length-1].setSpecular(0.1);
 				skin.addChild(M[M.length-1]);
 			}
 			

@@ -51,9 +51,10 @@
 		
 		private var collisionGeom:CollisionGeometry;	// for detecting collision on this mesh geometry
 		private var illuminable:Boolean = true;			// specifies if this mesh can be illuminated with directional lights
-		private var ambient:Vector3D;					// ambient lighting factors {red,green,blue,specular} 
+		private var ambient:Vector3D;					// ambient lighting factors {red,green,blue}
+		private var specular:Point;						// specular lighting factors {strength,hardness}
 		private var fog:Vector3D;						// linear fog blending factors {red,green,blue,maxDist}
-				
+		
 		public var trisCnt:int;							// number of triangles to tell program to draw
 		private var texture:BitmapData;					// texture of current mesh, can be null
 		private var normMap:BitmapData;					// normal map of current mesh, can be null
@@ -114,9 +115,10 @@
 		{
 			setGeometry(verticesData);
 			setTexture(bmd);
-			childMeshes = new Vector.<Mesh>();		// child meshes list
+			childMeshes = new Vector.<Mesh>();	// child meshes list
 			transform = new Matrix4x4();
-			setAmbient(0.3,0.3,0.3,0.1);			// R,G,B,Specular
+			setAmbient(0.3, 0.3, 0.3);			// R,G,B
+			setSpecular(0.2,5);					// strength,hardness
 			setFog();
 			progLightCnt = 0;
 		}//endconstructor
@@ -211,7 +213,7 @@
 		}//endfunction
 		
 		/**
-		* does a clone of this entire branch and returns clone
+		* does a clone of this entire branch (deep clone) and returns clone
 		*/
 		public function clone() : Mesh
 		{
@@ -228,6 +230,7 @@
 			m.texture = texture;
 			m.normMap = normMap;
 			m.ambient = ambient;
+			m.specular = specular;
 			m.fog = fog;
 			m.vertexBuffer = vertexBuffer;
 			m.indexBuffer = indexBuffer;
@@ -363,6 +366,7 @@
 			var m:Mesh = new Mesh();
 			m.illuminable = illuminable;
 			m.ambient = ambient;
+			m.specular = specular;
 			m.transform = transform;
 			m.setGeometry(nV,nI);
 			m.texture = tex;
@@ -961,22 +965,41 @@
 		}//endfunction
 		
 		/**
-		* sets the lighting parameters for this mesh only, if propagate, child meshes too
+		* sets the ambient parameters for this mesh only, if propagate, child meshes too
 		*/
-		public function setAmbient(red:Number=0.5,green:Number=0.5,blue:Number=0.5,specular:Number=0.5,propagate:Boolean=false) : void
+		public function setAmbient(red:Number=0.5,green:Number=0.5,blue:Number=0.5,propagate:Boolean=false) : void
 		{
 			var amFn:Function = function(M:Mesh,pM:Mesh):Boolean
 			{
-				if ((M.ambient!=null && M.ambient.x==1 && M.ambient.y==1 && M.ambient.z==1 && M.ambient.w==0) ||
-					(red==1 && green==1 && blue==1 && specular==0))
+				if ((M.ambient!=null && M.ambient.x==1 && M.ambient.y==1 && M.ambient.z==1) ||
+					(red==1 && green==1 && blue==1))
 				{	
 					M.stdProgram=null;
 					M.shadowProgram=null;
 				}
-				M.ambient = new Vector3D(red,green,blue,specular);
+				M.ambient = new Vector3D(red,green,blue);
 				return propagate;
 			}
 			treeTransverse(this,amFn);
+		}//endfunction
+		
+		/**
+		 * sets the specular parameters for this mesh only, if propagate, child meshes too
+		 */
+		public function setSpecular(strength:Number=0.5,hardness:uint=5,propagate:Boolean=false) : void
+		{
+			var spFn:Function = function(M:Mesh,pM:Mesh):Boolean
+			{
+				if ((M.specular!=null && M.specular.x==0) ||
+					strength==0)
+				{	
+					M.stdProgram=null;
+					M.shadowProgram=null;
+				}
+				M.specular = new Point(strength,hardness);
+				return propagate;
+			}
+			treeTransverse(this,spFn);
 		}//endfunction
 		
 		/**
@@ -1047,7 +1070,7 @@
 			else if (dataType==_typeS)	vertSrc = _skinningVertSrc(numLights>0) + vertSrc;
 			
 			var fragSrc:String = null;
-			if (texture!=null && numLights==0 && ambient.x==1 && ambient.y==1 && ambient.z==1 && ambient.w==0 && fog.w==0)
+			if (texture!=null && numLights==0 && ambient.x==1 && ambient.y==1 && ambient.z==1 && specular.x==0 && fog.w==0)
 				fragSrc = "tex oc, v2, fs0 <2d,linear,mipnone,repeat>\n";
 			else 
 				fragSrc = _stdFragSrc(numLights,texture!=null,useMipMapping,normMap!=null,fog.w>0,false,envMapBuffer!=null);
@@ -1400,7 +1423,7 @@
 				var prevVT:Matrix4x4 = viewT;
 				var prevFocalL:Number = focalL;
 				renderLightDepthCubeMaps(M);
-				context3d.setProgramConstantsFromVector("fragment", n*2+3, Vector.<Number>([20*20,20,1,0.01]));	// for calculating depth distances
+				context3d.setProgramConstantsFromVector("fragment", n*2+4, Vector.<Number>([20*20,20,1,0.01]));	// for calculating depth distances
 				viewT = prevVT;
 				focalL = prevFocalL;
 			}
@@ -1443,23 +1466,22 @@
 			var aspect:Number = viewWidth/viewHeight;
 			context3d.setProgramConstantsFromVector("vertex", 0, Vector.<Number>([nearClip,farClip,focalL,aspect]));	// set vc register 0
 			
-			// ----- set lighting info for this mesh -------------------------
-			context3d.setProgramConstantsFromVector("fragment", 0, Vector.<Number>([0,0.5,1,2]));	// fc0, useful constants and shadow depth mapping normalizing factor
+			context3d.setProgramConstantsFromVector("fragment", 0, Vector.<Number>([0,0.5,1,2]));	// fc0, useful constants
 			
 			// ----- calculate and upload point lighting positions -----------
+			var lightData:Vector.<Number> = lightsConst.slice();	// [lx,ly,lz,1,r,g,b,1, ...]
 			for (var j:int=0; j<n; j++)
 			{
-				var light:Vector.<Number> = lightsConst.slice(j*8,j*8+8);	// lx,ly,lz,1,r,g,b,1
-				var lx:Number = light[0];		// original light point
-				var ly:Number = light[1];
-				var lz:Number = light[2];
+				// light point posn transformed by viewT
+				var lx:Number = lightData[j*8+0];		// original light point
+				var ly:Number = lightData[j*8+1];
+				var lz:Number = lightData[j*8+2];
 				var tlx:Number = lx*viewT.aa + ly*viewT.ab + lz*viewT.ac + viewT.ad;	// transformed light point
 				var tly:Number = lx*viewT.ba + ly*viewT.bb + lz*viewT.bc + viewT.bd;
 				var tlz:Number = lx*viewT.ca + ly*viewT.cb + lz*viewT.cc + viewT.cd;
-				light[0] = tlx;	light[1] = tly; light[2] = tlz; light[3] = 0.125;	// 0.125 used for specular calculations
-				// light point posn transformed by viewT & light color
-				context3d.setProgramConstantsFromVector("fragment", j*2+3, light);
+				lightData[j*8+0] = tlx;	lightData[j*8+1] = tly; lightData[j*8+2] = tlz;
 			}//endfor
+			context3d.setProgramConstantsFromVector("fragment", 4, lightData);
 			
 			// ----- get list of meshes to be rendered -----------------------
 			var R:Vector.<Mesh> = new Vector.<Mesh>();
@@ -1478,12 +1500,11 @@
 						var T:Matrix4x4 = viewT.mult(M.workingTransform);		// transform for current mesh to be rendered
 						// ----- set transform parameters for this mesh to context3d ----
 						context3d.setProgramConstantsFromVector("vertex", 1, Vector.<Number>([T.aa,T.ab,T.ac,T.ad,T.ba,T.bb,T.bc,T.bd,T.ca,T.cb,T.cc,T.cd,0,0,0,1]));	// set vc register 1,2,3,4
-																		
-						// ----- input fc1 ambient and specular factors for this mesh ---
-						context3d.setProgramConstantsFromVector("fragment", 1, Vector.<Number>([M.ambient.x,M.ambient.y,M.ambient.z,M.ambient.w]));
 						
-						// ----- input fc2 linear fog factors for this mesh -------------
-						context3d.setProgramConstantsFromVector("fragment", 2, Vector.<Number>([M.fog.x,M.fog.y,M.fog.z,M.fog.w]));
+						// ----- ambient, specular, fog factors for this mesh -----------
+						context3d.setProgramConstantsFromVector("fragment", 1, Vector.<Number>([M.ambient.x, M.ambient.y, M.ambient.z,0]));	// r,g,b,0
+						context3d.setProgramConstantsFromVector("fragment", 2, Vector.<Number>([ M.specular.x,M.specular.y+1, M.specular.y, 0]));	// st,h1,h0,0
+						context3d.setProgramConstantsFromVector("fragment", 3, Vector.<Number>([M.fog.x,M.fog.y,M.fog.z,M.fog.w]));
 						
 						// ----- sets vertices info for this mesh to context3d ----------
 						if (M.dataType==_typeV)
@@ -1577,7 +1598,7 @@
 								context3d.setTextureAt(3+j, lightDCMs[j]);	// 3..n to hold light POV depth textures
 								// ----- set light pov transform to fragment constants
 								var L:Matrix4x4 = M.workingTransform.translate(-lightsConst[j*8+0],-lightsConst[j*8+1],-lightsConst[j*8+2]);
-								context3d.setProgramConstantsFromVector("fragment", 4+n*2+j*3, Vector.<Number>([L.aa,L.ab,L.ac,L.ad,L.ba,L.bb,L.bc,L.bd,L.ca,L.cb,L.cc,L.cd]));
+								context3d.setProgramConstantsFromVector("fragment", 5+n*2+j*3, Vector.<Number>([L.aa,L.ab,L.ac,L.ad,L.ba,L.bb,L.bc,L.bd,L.ca,L.cb,L.cc,L.cd]));
 							}
 						}
 						else 
@@ -3225,14 +3246,15 @@
 		*				v3= untransformed vertex
 		*				v4= transformed tangent
 		*				v4=[nearClip,farClip,focalL,aspectRatio] 
-		* constants:	fc0= [0,0.5,1,2]	// useful constants
-		*				fc1= [r,g,b,sf]		// ambient and specular factor
-		*				fc2= [r,g,b,fogD]	// linear fog factor
-		*				fc3= [px,py,pz,1]	// light 1 point
-		*				fc4= [r,g,b,1]		// light 1 color
+		* constants:	fc0= [0,0.5,1,2]	// 0,0.5,1,2
+		*				fc1= [r,g,b,0]		// ambient rgb
+		*				fc2= [st,h1,h0,0]	// specStr,hardness+1,hardness
+		*				fc3= [r,g,b,fogD]	// linear fog factor
+		*				fc4= [px,py,pz,1]	// light 1 point
+		*				fc5= [r,g,b,1]		// light 1 color
 		*				...
-		*				fc_n*2+3= [px,py,pz,0.125]	// light n position
-		*				fc_n*2+4= [r,g,b,1]			// light n color, 
+		*				fc_n*2+4= [px,py,pz,0]		// light n position
+		*				fc_n*2+5= [r,g,b,1]			// light n color, 
 		*/
 		private static function _stdFragSrc(numLights:uint,hasTex:Boolean=true,useMip:Boolean=true,hasNorm:Boolean=true,fog:Boolean=false,shadowMap:Boolean=false,envMap:Boolean=false) : String
 		{
@@ -3254,10 +3276,10 @@
 				
 				if (fog)
 				{
-					s +="div ft6, v0.zzzz, fc2.wwww\n"+		// ft6 = z/fogD,z/fogD,z/fogD,z/fogD
+					s +="div ft6, v0.zzzz, fc3.wwww\n"+		// ft6 = z/fogD,z/fogD,z/fogD,z/fogD
 						"sat ft6, ft6\n"+					// 
 						"sub ft7, fc0.zzzz, ft6\n"+			// ft7 = 1-z/fogD,1-z/fogD,1-z/fogD,1-z/fogD
-						"mul ft6.xyz, ft6.xyz, fc2.xyz\n"+	// ft6 = fog vals fraction
+						"mul ft6.xyz, ft6.xyz, fc3.xyz\n"+	// ft6 = fog vals fraction
 						"mul ft7.xyz, ft7.xyz, ft0.xyz\n"+	// ft7 = color vals fraction
 						"add oc, ft7, ft6\n";				// output
 				}
@@ -3293,14 +3315,14 @@
 			// ----- for each light point, op codes to handle lighting mix ----
 			for (var i:int=0; i<numLights; i++)
 			{
-				s+= "sub ft2, fc"+(i*2+3)+", v0 \n"+	// ft2=vector from point to light source
+				s+= "sub ft2, fc"+(i*2+4)+", v0 \n"+	// ft2=vector from point to light source
 					"nrm ft2.xyz, ft2.xyz \n";			// ft2=normalize light vector
 				
 					// ----- calculate diffuse lighting 
 				s+=	"dp3 ft3, ft2, ft1.xyz\n"+			// ft3.xyzw=dot normal with light vector
-					"max ft3, ft3, fc0.xxxx\n"+   		// ft3=max(0,ft3)
+					"max ft3, ft3, fc0.xxxx\n"+	  		// ft3=max(0,ft3)
 					"mul ft3, ft0, ft3\n"+  			// ft3=multiply fragment color by intensity from texture
-					"mul ft3, ft3, fc"+(i*2+4)+"\n"+	// ft3=multiply fragment color by light color
+					"mul ft3, ft3, fc"+(i*2+5)+"\n"+	// ft3=multiply fragment color by light color
 					
 					// ----- calculate phong lighting
 					"nrm ft4.xyz, v0.xyz\n" +			// ft4 = normalized vector to point
@@ -3311,13 +3333,11 @@
 					"dp3 ft4.xyz, ft4.xyz, ft2.xyz\n";	// ft4=magnitude of specular
 				
 					// ----- calculate specular reflection
-				s+= "mov ft7.x, fc"+(i*2+3)+".w\n"+		// ft7.x=0.125
-					"sub ft7.y, fc0.z, ft7.x\n"+		// ft7.y=1-0.125
-					"sub ft7.y, ft4.x, ft7.y\n"+  		// ft7.y=norm-(1-0.125)
-					"div ft7.z, ft7.y, ft7.x\n"+		// ft7.z=(norm-(1-0.125))/0.125
-					"max ft7.z, ft7.z, fc0.x\n"+		// ft7.z=max(brightness,0)
-					"mul ft7.z, ft7.z, fc1.w\n"+		// ft7.z=brightness*sf
-					"mul ft2, fc"+(i*2+4)+", ft7.zzzz\n";	// ft2 = spec light color*sf
+				s+= "mul ft7.z, ft4.x, fc2.y\n"+		// ft7.z=mag*hardness1
+					"sub ft7.z, ft7.z, fc2.z\n"+		// ft7.z=mag*hardness1 - hardness0
+					"max ft7.z, ft7.z, fc0.xxxx\n"+		// ft7.z=max(brightness,0)
+					"mul ft7.z, ft7.z, fc2.x\n"+		// ft7.z=brightness*sf
+					"mul ft2, fc"+(i*2+5)+", ft7.zzzz\n";	// ft2 = spec light color*sf
 				
 				if (shadowMap)	
 				s+=_cubeSoftShadowFragSrc(i,numLights)+	// uses ft7 output to ft4
@@ -3333,11 +3353,11 @@
 			if (envMap)
 			s += _envMapFragSrc()+						// uses ft7 output to ft4
 				"max ft6, ft6, ft4\n";					// include environment map 
-						
+			
 			if (hasNorm)
 			s+=	"tex ft7, v2, fs2 <2d,linear,"+mip+",repeat>\n"+	// ft7=sample normSpecMap with UV
 				"mul ft6, ft6, ft7.wwww\n";					// normMapspecFactor*light color*sf
-									
+			
 			s+= "add ft5, ft5, ft6\n"+					// combine specular highlight with diffuse color 
 				"mov ft5.w, ft0.w\n"+					// move alpha value of texture over
 				"mul ft1.rgb, ft0.rgb, fc1.rgb\n";		// ft1= calculated ambient color
@@ -3345,11 +3365,11 @@
 			// ----- implement simple linear fog ------------------------------
 			if (fog)
 			s+=	"max ft1, ft1, ft5\n"+				// add ambient color with illum color
-				"div ft6, v0.zzzz, fc2.wwww\n"+		// ft6 = z/fogD,z/fogD,z/fogD,z/fogD
+				"div ft6, v0.zzzz, fc3.wwww\n"+		// ft6 = z/fogD,z/fogD,z/fogD,z/fogD
 				"sat ft6, ft6\n"+					// 
 				"sub ft7, fc0.zzzz, ft6\n"+			// ft7 = 1-z/fogD,1-z/fogD,1-z/fogD,1-z/fogD
 				"mul ft6.w, ft6.w, ft1.w\n"+		// ft6 = z/fogD,z/fogD,z/fogD,alpha*z/fogD
-				"mul ft6.xyz, ft6.xyz, fc2.xyz\n"+	// ft6 = fog vals fraction
+				"mul ft6.xyz, ft6.xyz, fc3.xyz\n"+	// ft6 = fog vals fraction
 				"mul ft7, ft7, ft1\n"+				// ft7 = color vals fraction
 				"add oc, ft7, ft6\n";
 			else
@@ -3374,7 +3394,7 @@
 			"sub ft4.xyz, ft4.xyz, ft3.xyz\n"+	// ft4=reflected vector
 			//"nrm ft4.xyz, ft4.xyz\n"+			// normalized reflected vector
 			"tex ft4, ft4.xyz, fs1 <cube,linear> \n"+ 	// fs1=environment map
-			"mul ft4, ft4, fc1.wwww\n";			// multiply by specular factor
+			"mul ft4, ft4, fc2.xxxx\n";			// multiply by specular factor
 			return s;
 		}//endfunction
 		
@@ -3386,8 +3406,9 @@
 		*				v3=untransformed vertex 
 		*				v4=[nearClip,farClip,focalL,aspectRatio] 
 		* constants:	fc0= [0,0.5,1,2]	// useful constants
-		*				fc1= [r,g,b,sf]		// ambient and specular factor
-		*				fc2= [r,g,b,fogD]	// linear fog factor
+		*				fc1= [r,g,b,0]		// ambient and specular factor
+		*				fc2= [st,h1,h0,0]	// ambient and specular factor
+		*				fc3= [r,g,b,fogD]	// linear fog factor
 		*				...
 		*				fc_n+1= [px,py,pz,1]// light n point
 		*				fc_n+2= [r,g,b,1]	// light n color
@@ -3397,7 +3418,7 @@
 		private static function _cubeSoftShadowFragSrc(idx:uint,numLights:uint) : String
 		{
 			var s:String =
-				"m34 ft7.xyz, v3, fc"+(numLights*2+idx*3+4)+"\n"+	// ft7= position transformed to light POV
+				"m34 ft7.xyz, v3, fc"+(numLights*2+idx*3+5)+"\n"+	// ft7= position transformed to light POV
 				"dp3 ft7.w, ft7.xyz, ft7.xyz\n"+					// ft7.w = dist squared from light src
 				"sqt ft7.w, ft7.w\n"+								// ft7.w = dist from light src
 				"nrm ft7.xyz, ft7.xyz\n"+							// ft7.xyz = normalized vector
@@ -3405,54 +3426,54 @@
 				
 				// ----- center vector
 				"tex ft4.xyz, ft7.xyz, fs"+(3+idx)+" <cube,linear>\n"+	// ft4=value depthTexture coordinate
-				"dp3 ft4.x, ft4.rgb, fc"+(numLights*2+3)+".xyz\n"+	// ft4.w= dist value from depth texture
+				"dp3 ft4.x, ft4.rgb, fc"+(numLights*2+4)+".xyz\n"+	// ft4.w= dist value from depth texture
 				"slt ft4.x, ft7.w, ft4.x\n"+						// ft4x=1 if ft7<ft4 else 0
 				"add ft4.w, ft4.w, ft4.x\n"+
 				
 				// ----- left vector
-				"sub ft7.x, ft7.x, fc"+(numLights*2+3)+".w\n"+		// x-=0.01
+				"sub ft7.x, ft7.x, fc"+(numLights*2+4)+".w\n"+		// x-=0.01
 				"tex ft4.xyz, ft7.xyz, fs"+(3+idx)+" <cube,linear>\n"+	// ft4=value depthTexture coordinate
-				"dp3 ft4.x, ft4.rgb, fc"+(numLights*2+3)+".xyz\n"+	// ft4.w= dist value from depth texture
+				"dp3 ft4.x, ft4.rgb, fc"+(numLights*2+4)+".xyz\n"+	// ft4.w= dist value from depth texture
 				"slt ft4.x, ft7.w, ft4.x\n"+						// ft4x=1 if ft7<ft4 else 0
 				"add ft4.w, ft4.w, ft4.x\n"+
 				
 				// ----- right vector
-				"add ft7.x, ft7.x, fc"+(numLights*2+3)+".w\n"+		// x+=0.01
-				"add ft7.x, ft7.x, fc"+(numLights*2+3)+".w\n"+		// x+=0.01
+				"add ft7.x, ft7.x, fc"+(numLights*2+4)+".w\n"+		// x+=0.01
+				"add ft7.x, ft7.x, fc"+(numLights*2+4)+".w\n"+		// x+=0.01
 				"tex ft4.xyz, ft7.xyz, fs"+(3+idx)+" <cube,linear>\n"+	// ft4=value depthTexture coordinate
-				"dp3 ft4.x, ft4.rgb, fc"+(numLights*2+3)+".xyz\n"+	// ft4.w= dist value from depth texture
+				"dp3 ft4.x, ft4.rgb, fc"+(numLights*2+4)+".xyz\n"+	// ft4.w= dist value from depth texture
 				"slt ft4.x, ft7.w, ft4.x\n"+						// ft4x=1 if ft7<ft4 else 0
 				"add ft4.w, ft4.w, ft4.x\n"+
 				
 				// ----- up vector
-				"sub ft7.x, ft7.x, fc"+(numLights*2+3)+".w\n"+		// x-=0.01
-				"sub ft7.y, ft7.y, fc"+(numLights*2+3)+".w\n"+		// y-=0.01
+				"sub ft7.x, ft7.x, fc"+(numLights*2+4)+".w\n"+		// x-=0.01
+				"sub ft7.y, ft7.y, fc"+(numLights*2+4)+".w\n"+		// y-=0.01
 				"tex ft4.xyz, ft7.xyz, fs"+(3+idx)+" <cube,linear>\n"+	// ft4=value depthTexture coordinate
-				"dp3 ft4.x, ft4.rgb, fc"+(numLights*2+3)+".xyz\n"+	// ft4.w= dist value from depth texture
+				"dp3 ft4.x, ft4.rgb, fc"+(numLights*2+4)+".xyz\n"+	// ft4.w= dist value from depth texture
 				"slt ft4.x, ft7.w, ft4.x\n"+						// ft4x=1 if ft7<ft4 else 0
 				"add ft4.w, ft4.w, ft4.x\n"+
 				
 				// ----- down vector
-				"add ft7.y, ft7.y, fc"+(numLights*2+3)+".w\n"+		// y+=0.01
-				"add ft7.y, ft7.y, fc"+(numLights*2+3)+".w\n"+		// y+=0.01
+				"add ft7.y, ft7.y, fc"+(numLights*2+4)+".w\n"+		// y+=0.01
+				"add ft7.y, ft7.y, fc"+(numLights*2+4)+".w\n"+		// y+=0.01
 				"tex ft4.xyz, ft7.xyz, fs"+(3+idx)+" <cube,linear>\n"+	// ft4=value depthTexture coordinate
-				"dp3 ft4.x, ft4.rgb, fc"+(numLights*2+3)+".xyz\n"+	// ft4.w= dist value from depth texture
+				"dp3 ft4.x, ft4.rgb, fc"+(numLights*2+4)+".xyz\n"+	// ft4.w= dist value from depth texture
 				"slt ft4.x, ft7.w, ft4.x\n"+						// ft4x=1 if ft7<ft4 else 0
 				"add ft4.w, ft4.w, ft4.x\n"+
 				
 				// ----- foward vector
-				"sub ft7.y, ft7.y, fc"+(numLights*2+3)+".w\n"+		// y-=0.01
-				"sub ft7.z, ft7.z, fc"+(numLights*2+3)+".w\n"+		// z-=0.01
+				"sub ft7.y, ft7.y, fc"+(numLights*2+4)+".w\n"+		// y-=0.01
+				"sub ft7.z, ft7.z, fc"+(numLights*2+4)+".w\n"+		// z-=0.01
 				"tex ft4.xyz, ft7.xyz, fs"+(3+idx)+" <cube,linear>\n"+	// ft4=value depthTexture coordinate
-				"dp3 ft4.x, ft4.rgb, fc"+(numLights*2+3)+".xyz\n"+	// ft4.w= dist value from depth texture
+				"dp3 ft4.x, ft4.rgb, fc"+(numLights*2+4)+".xyz\n"+	// ft4.w= dist value from depth texture
 				"slt ft4.x, ft7.w, ft4.x\n"+						// ft4x=1 if ft7<ft4 else 0
 				"add ft4.w, ft4.w, ft4.x\n"+
 				
 				// ----- back vector
-				"add ft7.z, ft7.z, fc"+(numLights*2+3)+".w\n"+		// z+=0.01
-				"add ft7.z, ft7.z, fc"+(numLights*2+3)+".w\n"+		// z+=0.01
+				"add ft7.z, ft7.z, fc"+(numLights*2+4)+".w\n"+		// z+=0.01
+				"add ft7.z, ft7.z, fc"+(numLights*2+4)+".w\n"+		// z+=0.01
 				"tex ft4.xyz, ft7.xyz, fs"+(3+idx)+" <cube,linear>\n"+	// ft4=value depthTexture coordinate
-				"dp3 ft4.x, ft4.rgb, fc"+(numLights*2+3)+".xyz\n"+	// ft4.w= dist value from depth texture
+				"dp3 ft4.x, ft4.rgb, fc"+(numLights*2+4)+".xyz\n"+	// ft4.w= dist value from depth texture
 				"slt ft4.x, ft7.w, ft4.x\n"+						// ft4x=1 if ft7<ft4 else 0
 				"add ft4.w, ft4.w, ft4.x\n"+
 				
@@ -3487,8 +3508,8 @@
 
 				// ----- chk shadow z map, if in shadows, do not add ft3
 				"tex ft4, ft7.xyz, fs"+(3+idx)+" <cube,linear>\n"+	// ft4=value depthTexture coordinate
-				"dp3 ft4.w, ft4.xyz, fc"+(numLights*2+3)+".xyz\n"+	// ft4.w= dist value from depth texture
-				//"add ft4.w, ft4.w, fc"+(numLights*2+3)+".w\n"+		// ft4.w += 0.05;
+				"dp3 ft4.w, ft4.xyz, fc"+(numLights*2+4)+".xyz\n"+	// ft4.w= dist value from depth texture
+				//"add ft4.w, ft4.w, fc"+(numLights*2+4)+".w\n"+		// ft4.w += 0.05;
 				"slt ft4, ft7.wwww, ft4.wwww\n";					// ft4=1 if ft7<ft4 else 0
 			return s;
 		}//endfunction

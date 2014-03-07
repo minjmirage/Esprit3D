@@ -70,7 +70,8 @@
 			skin = new Mesh();
 			skin.castsShadow=false;
 			skin.enableLighting(false);
-			skin.setAmbient(1,1,1,0);
+			skin.setAmbient(1,1,1);
+			skin.setSpecular(0);
 			skin.setParticles(V,I);
 			skin.setTexture(spriteSheet);
 			skin.setBlendMode(blend);
