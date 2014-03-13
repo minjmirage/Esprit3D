@@ -959,14 +959,16 @@
 				{
 					buff.uploadFromBitmapData(bmd,0);	// upload original tex
 					var mipLv:int=0;
-					do {	// calculate and upload mip levels
+					var sc:Number = 1;
+					while (bmd.width*sc>1 && bmd.height*sc>1) 
+					{	// calculate and upload mip levels
 						mipLv++;
-						var sc:Number = 1/Math.pow(2,mipLv);
+						sc = 1/Math.pow(2,mipLv);
 						var mbmd:BitmapData = new BitmapData(bmd.width*sc,bmd.height*sc,bmd.transparent,0);
 						mbmd.draw(bmd,new Matrix(sc,0,0,sc));
 						buff.uploadFromBitmapData(mbmd,mipLv);
 						mbmd.dispose();
-					} while (bmd.width*sc>1 && bmd.height*sc>1);
+					}
 				}
 				else
 					buff.uploadFromBitmapData(bmd);
