@@ -1886,20 +1886,37 @@
 			var i:int=0;
 			while (i<lat)
 			{
-				var A:Vector.<Number> = createTrianglesBand(Math.sin(Math.PI*i/lat)*r,
-															Math.sin(Math.PI*(i+1)/lat)*r,
-															-Math.cos(Math.PI*i/lat)*r,
-															-Math.cos(Math.PI*(i+1)/lat)*r,
+				var sinL0:Number = Math.sin(Math.PI*i/lat);
+				var sinL1:Number = Math.sin(Math.PI*(i+1)/lat);
+				var cosL0:Number = Math.cos(Math.PI*i/lat);
+				var cosL1:Number = Math.cos(Math.PI*(i+1)/lat);
+				var A:Vector.<Number> = createTrianglesBand(sinL0*r,
+															sinL1*r,
+															-cosL0*r,
+															-cosL1*r,
 															lon,soft);
 				
-				// ----- adjust UVs of mesh to wrap entire torus instead
-				for (var j:int=0; j<A.length; j+=8)	A[j+7]=i/lat+A[j+7]/lat;
-				
+				// ----- adjust UVs of mesh to wrap entire sphere instead
+				for (var j:int=0; j<A.length; j+=8)	
+				{
+					A[j+7]=i/lat+A[j+7]/lat;
+					if (soft)
+					{	// recalculate normals
+						var nx:Number = A[j+0];
+						var ny:Number = A[j+1];
+						var nz:Number = A[j+2];
+						var nl:Number = Math.sqrt(nx*nx+ny*ny+nz*nz);
+						nx/=nl; ny/=nl; nz/=nl;
+						A[j+3]=nx; A[j+4]=ny; A[j+5]=nz;
+					}
+				}
 				S = S.concat(A);
 				i++;
 			}//endfor
 			
-			return new Mesh(S,tex);
+			var M:Mesh = new Mesh(S,tex);
+			M.compressGeometry();
+			return M;
 		}//endfunction
 		
 		/**
@@ -1918,13 +1935,34 @@
 															m,soft);
 				
 				// ----- adjust UVs of mesh to wrap entire torus instead
-				for (var j:int=0; j<A.length; j+=8)	A[j+7]=i/n+A[j+7]/n;
-				
+				var F:Vector.<int> = Vector.<int>([0,0,1,1,0,1]);
+				for (var j:int=0; j<A.length; j+=8)	
+				{
+					A[j+7]=i/n+A[j+7]/n;
+					if (soft)
+					{	// 112212
+						var stp:int = F[(j/8)%6];	// step +1 or step
+						var lon:int = int(j/48);	// current longitude
+						var ang:Number = (lon+stp)/m*Math.PI*2;
+						var cx:Number = r1*Math.sin(ang);
+						var cy:Number = r1*Math.cos(ang);
+						var cz:Number = 0;
+						var nx:Number = A[j+0]-cx;
+						var ny:Number = A[j+1]-cy;
+						var nz:Number = A[j+2]-cz;
+						var nl:Number = Math.sqrt(nx*nx+ny*ny+nz*nz);
+						nx/=nl; ny/=nl; nz/=nl;
+												
+						A[j+3]=nx; A[j+4]=ny; A[j+5]=nz;
+					}
+				}
 				T=T.concat(A);
 				i++;
 			}//endfunction
 			
-			return new Mesh(T,tex);
+			var M:Mesh = new Mesh(T,tex);
+			M.compressGeometry();
+			return M;
 		}//endfunction
 		
 		/**
@@ -1960,9 +1998,6 @@
 		*/
 		public static function createTrianglesBand(r1:Number,r2:Number,z1:Number,z2:Number,n:int,soft:Boolean=true) : Vector.<Number>
 		{
-			if (r1<0.0001) r1=0;
-			if (r2<0.0001) r2=0;
-		
 			var A:Vector.<Number> = new Vector.<Number>();
 			var i:int=0;
 			while (i<n)
