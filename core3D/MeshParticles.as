@@ -19,7 +19,6 @@ package core3D
 		
 		private var numTrisPerMesh:uint = 0;
 		private var particleMesh:Mesh = null;
-		private var _init:Function=null;
 			
 		/**
 		* creates a 60 batch rendered mesh group
@@ -28,8 +27,7 @@ package core3D
 		{
 			skin = m.mergeTree();
 			
-			_init = function():void
-			{
+			
 				if (m.getDataType()!=Mesh._typeV)	
 				{
 					Mesh.debugTrace("MeshParticles Error! invalid input mesh of type:"+m.getDataType());
@@ -87,9 +85,6 @@ package core3D
 				for (i=0; i<totalParticles; i++)	// 60 GPU batch processed meshes
 					MData.push(new VertexData());
 			
-				_init = null;
-			}//endfunction
-			
 		}//endConstructor
 		
 		public function get totalRenderable() : int
@@ -103,19 +98,14 @@ package core3D
 		public function clone() : MeshParticles
 		{
 			var mp:MeshParticles = new MeshParticles(particleMesh);
-			
-			if (_init==null)
-			{
-				mp.skin = skin.clone();
-				mp.totalParticles = totalParticles;
-				mp.numLiveParticles = numLiveParticles;
-				mp.numTrisPerMesh = numTrisPerMesh;
-				mp.MData = new Vector.<VertexData>();
-				for (var i:int=MData.length-1; i>=0; i--)
-					mp.MData.unshift(MData[i]);
-			}
-			
-			return new MeshParticles(particleMesh);
+			mp.skin = skin.clone();
+			mp.totalParticles = totalParticles;
+			mp.numLiveParticles = numLiveParticles;
+			mp.numTrisPerMesh = numTrisPerMesh;
+			mp.MData = new Vector.<VertexData>();
+			for (var i:int=MData.length-1; i>=0; i--)
+				mp.MData.unshift(MData[i]);
+			return mp;
 		}//endfunction
 				
 		/**
@@ -123,8 +113,6 @@ package core3D
 		*/
 		public function nextLocRotScale(trans:Matrix4x4,sc:Number=1) : void
 		{
-			if (_init!=null) _init();
-			
 			numLiveParticles = Math.min(MData.length,numLiveParticles+1);
 			var md:VertexData = MData[numLiveParticles-1];	// the mesh particle data to alter 
 			
@@ -145,8 +133,6 @@ package core3D
 										dx:Number,dy:Number,dz:Number,	// direction
 										sc:Number=1) : void				// scale
 		{
-			if (_init!=null) _init();
-			
 			numLiveParticles = Math.min(MData.length,numLiveParticles+1);
 			var md:VertexData = MData[numLiveParticles-1];	// the mesh particle data to alter 
 			

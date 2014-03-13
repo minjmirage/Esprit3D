@@ -35,7 +35,7 @@
 		
 	/**
 	* Unified 3D Mesh class
-	* Author: Lin Minjiang	2014/02/24	updated
+	* Author: Lin Minjiang	2014/03/13	updated
 	* Known Issues: No farClip, shadowMapping range too short
 	*/
 	public class Mesh
@@ -57,7 +57,7 @@
 		
 		public var trisCnt:int;							// number of triangles to tell program to draw
 		private var texture:BitmapData;					// texture of current mesh, can be null
-		private var normMap:BitmapData;					// normal map of current mesh, can be null
+		private var normMap:BitmapData;					// combined normal and speclar map of current mesh, can be null
 		private var vertexBuffer:VertexBuffer3D;		// Where Vertex positions for this mesh will be stored
 		private var indexBuffer:IndexBuffer3D;			// Order of Vertices to be drawn for this mesh
 		private var textureBuffer:Texture;				// uploaded Texture of this mesh
@@ -67,7 +67,9 @@
 		private var shadowProgram:Program3D;			// shadowmapped rendering program specific for this mesh
 		private var depthProgram:Program3D;				// program for rendering depth maps for shadow mapping
 		private var progLightCnt:uint;					// number of lights the programs are compiled for
-				
+		private var hasNorm:Boolean = false;			// need this because norm and spec is merged as 1 bitmapData
+		private var hasSpec:Boolean = false;
+		
 		public var depthWrite:Boolean=true;				// whether to write to depth buffer
 		private var blendSrc:String="one";				// source pixel blend mode
 		private var blendDest:String="zero";			// destination pixel blend mode
@@ -77,11 +79,11 @@
 		public static const _typeS:uint = 1;			// skinning data
 		public static const _typeP:uint = 2;			// batch particles data
 		public static const _typeM:uint = 3;			// batch meshes data
-						
+		
 		public static var focalL:Number = 1;			// GLOBAL camera focal length
 		public static var nearClip:Number = 1;			// GLOBAL near clipping plane during rendering
 		public static var farClip:Number = 1000;		// GLOBAL far clipping plane during rendering
-		public static var viewT:Matrix4x4=null;			// GLOBAL camera view transform matrix
+		public static var viewT:Matrix4x4=null;			// GLOBAL scene transform matrix
 		public static var camT:Matrix4x4=null;			// GLOBAL camera view transform matrix
 		public static var lightsConst:Vector.<Number>;	// GLOBAL [vx,vy,vz,1,r,g,b,1, vx,vy,vz,1,r,g,b,1, ...] point light values
 		public static var debugTf:TextField = null;
@@ -104,9 +106,9 @@
 		private static var uploadedTextures:Array;			// GLOBAL list of uploaded textures [bmd,textureBuffer,bmd,textureBuffer ... ]
 		private static var uploadedPrograms:Array;			// GLOBAL list of upload programs [string,program,string,program ... ]
 		
-		private static var numMeshes:int = 0;
-		private static var drawCalls:int = 0;
-		private static var trisRendered:int = 0;
+		private static var numMeshes:int = 0;			// for stats tracking while rendering
+		private static var drawCalls:int = 0;			// for stats tracking while rendering
+		private static var trisRendered:int = 0;		// for stats tracking while rendering
 		
 		/**
 		* CONSTRUCTOR      verticesData : [vx,vy,vz,nx,ny,nz,u,v, ....]
@@ -229,6 +231,8 @@
 			m.collisionGeom = collisionGeom;	// pass collision geometry over!
 			m.texture = texture;
 			m.normMap = normMap;
+			m.hasNorm = hasNorm;
+			m.hasSpec = hasSpec;
 			m.ambient = ambient;
 			m.specular = specular;
 			m.fog = fog;
@@ -325,11 +329,13 @@
 						
 			var tex:BitmapData = this.texture;
 			var spec:BitmapData = this.normMap;
+			var hNorm:Boolean = this.hasNorm;
+			var hSpec:Boolean = this.hasSpec;
 			for (var i:int=childMeshes.length-1; i>-1; i--)
 			{
 				var c:Mesh = childMeshes[i].mergeTree();
 				if (tex==null)	tex = c.texture;
-				if (spec==null)	spec = c.normMap;
+				if (spec==null)	{spec = c.normMap; hNorm=c.hasNorm; hSpec=c.hasSpec;}
 				var cT:Matrix4x4 = c.transform;
 				var vD:Vector.<Number> = c.vertData;
 				var iD:Vector.<uint> = c.idxsData;
@@ -371,6 +377,8 @@
 			m.setGeometry(nV,nI);
 			m.texture = tex;
 			m.normMap = spec;
+			m.hasNorm = hNorm;
+			m.hasSpec = hSpec;
 			return m;
 		}//endfunction
 				
@@ -835,7 +843,7 @@
 			
 			// ----- combine the normal and specular map together
 			var combined:BitmapData = null;
-			if (bw>0 && bh>0)
+			if ((normBmd!=null || specBmd!=null) && bw>0 && bh>0)
 			{
 				combined = new BitmapData(bw,bh,true,0xFF8080FF);
 				var rect:Rectangle = new Rectangle(0,0,bw,bh);
@@ -852,6 +860,8 @@
 			
 			var nsFn:Function = function(M:Mesh,pM:Mesh):Boolean
 			{
+				M.hasNorm = normBmd!=null;
+				M.hasSpec = specBmd!=null;
 				if ((M.normMap==null && combined!=null) || (M.normMap!=null && combined==null))
 				{
 					M.stdProgram=null;
@@ -865,7 +875,7 @@
 			
 			return combined;
 		}//endfunction
-				
+		
 		/**
 		* sets up the environment map for this mesh... so it is reflecting mirror like
 		*/
@@ -1073,8 +1083,8 @@
 			if (texture!=null && numLights==0 && ambient.x==1 && ambient.y==1 && ambient.z==1 && specular.x==0 && fog.w==0)
 				fragSrc = "tex oc, v2, fs0 <2d,linear,mipnone,repeat>\n";
 			else 
-				fragSrc = _stdFragSrc(numLights,texture!=null,useMipMapping,normMap!=null,fog.w>0,false,envMapBuffer!=null);
-			var shadowFragSrc:String = _stdFragSrc(numLights,texture!=null,useMipMapping,normMap!=null,fog.w>0,true,envMapBuffer!=null);
+				fragSrc = _stdFragSrc(numLights,texture!=null,useMipMapping,hasNorm,hasSpec,fog.w>0,envMapBuffer!=null,false);
+			var shadowFragSrc:String = _stdFragSrc(numLights,texture!=null,useMipMapping,hasNorm,hasSpec,fog.w>0,envMapBuffer!=null,true);
 			
 			stdProgram = createProgram(vertSrc,fragSrc);
 			shadowProgram = createProgram(vertSrc,shadowFragSrc);
@@ -1816,7 +1826,7 @@
 				gettingContext=false;
 				var stage3d:Stage3D=Stage3D(ev.currentTarget);
 				context3d=stage3d.context3D;
-				context3d.enableErrorChecking=false;	//**********************************
+				context3d.enableErrorChecking=true;	//**********************************
 				debugTrace("got context3d, driverInfo:"+context3d.driverInfo);
 				configBackBufferAndCallBack();
 			}//endfunction
@@ -3291,7 +3301,7 @@
 		*				fc_n*2+4= [px,py,pz,0]		// light n position
 		*				fc_n*2+5= [r,g,b,1]			// light n color, 
 		*/
-		private static function _stdFragSrc(numLights:uint,hasTex:Boolean=true,useMip:Boolean=true,hasNorm:Boolean=true,fog:Boolean=false,shadowMap:Boolean=false,envMap:Boolean=false) : String
+		private static function _stdFragSrc(numLights:uint,hasTex:Boolean,useMip:Boolean,hasNorm:Boolean,hasSpec:Boolean,fog:Boolean,envMap:Boolean,shadowMap:Boolean) : String
 		{
 			var s:String = "";
 			var mip:String = "mipnone";
@@ -3389,7 +3399,7 @@
 			s += _envMapFragSrc()+						// uses ft7 output to ft4
 				"max ft6, ft6, ft4\n";					// include environment map 
 			
-			if (hasNorm)
+			if (hasSpec)
 			s+=	"tex ft7, v2, fs2 <2d,linear,"+mip+",repeat>\n"+	// ft7=sample normSpecMap with UV
 				"mul ft6, ft6, ft7.wwww\n";					// normMapspecFactor*light color*sf
 			
