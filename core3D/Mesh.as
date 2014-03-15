@@ -1153,7 +1153,7 @@
 		public function lineHitsMesh(lox:Number,loy:Number,loz:Number,lvx:Number,lvy:Number,lvz:Number,T:Matrix4x4=null) : VertexData
 		{
 			if (transform==null) 	transform = new Matrix4x4();
-			if (T==null)	T=transform;
+			if (T==null)	T = transform;
 			else			T = T.mult(transform);	// concat transform with self transform
 			
 			var hpt:VertexData = null;			
@@ -2887,9 +2887,9 @@
 					m.idxsData = indicesData;
 					m.dataType = type;
 					m.trisCnt = il/3;	// number of tris to render
+					m.collisionGeom = new CollisionGeometry(verticesData,indicesData);
 					if (context3d!=null && type==_typeV)
 					{	// upload to buffers directly from 
-						m.collisionGeom = new CollisionGeometry(verticesData,indicesData);
 						var oldPosn:int = ba.position;
 						// ----- set context vertices data ----------------------------------------
 						m.vertexBuffer=context3d.createVertexBuffer(vl/8, 8);	// vertex vx,vy,vz, nx,ny,nz, u,v
