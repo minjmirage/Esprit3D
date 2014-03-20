@@ -8,7 +8,6 @@
 	import flash.filters.ColorMatrixFilter;
 	import flash.display.Stage3D;
 	import flash.display3D.Context3D;
-	import flash.display3D.Context3DProgramType;
 	import flash.display3D.Context3DTextureFormat;
 	import flash.display3D.Context3DTriangleFace;
 	import flash.display3D.IndexBuffer3D;
@@ -1122,8 +1121,8 @@
 			try {
 			var agalVertex:AGALMiniAssembler=new AGALMiniAssembler();
 			var agalFragment:AGALMiniAssembler=new AGALMiniAssembler();
-			agalVertex.assemble(Context3DProgramType.VERTEX, agalVertexSource);
-			agalFragment.assemble(Context3DProgramType.FRAGMENT, agalFragmentSource);
+			agalVertex.assemble("vertex", agalVertexSource);
+			agalFragment.assemble("fragment", agalFragmentSource);
 			prog = context3d.createProgram();
 			prog.upload(agalVertex.agalcode, agalFragment.agalcode);
 			} catch (e:Error) {debugTrace("AGAL compile error "+e);}
@@ -1409,7 +1408,7 @@
 		/**
 		* renders given mesh (branch) onto stage3D
 		*/
-		public static function renderBranch(stage:Stage,M:Mesh,shadows:Boolean=false,toBmd:BitmapData=null) : void
+		public static function renderBranch(stage:Stage,M:Mesh,shadows:Boolean=false,renderTarg:String="backBuffer") : void
 		{
 			if (context3d==null)	{getContext(stage);	return;}
 			
@@ -1441,15 +1440,27 @@
 			}
 			
 			// ----- clear screen buffer AFTER renderLightPOVDepths ----------
+			if (renderTarg=="texture")
+			{
+				if (outTex==null) outTex = context3d.createTexture(1024,1024,Context3DTextureFormat.BGRA, true);
+				context3d.clear(0,0,0,1,0,0,0xFFFFFFFF);	// clear depth buffer to 0s
+				context3d.setRenderToTexture(outTex,true,0);
+				context3d.clear(0,0,0,0,0,0,0xFFFFFFFF);	// clear depth buffer to 0s
+				
+			}
+			else
+			{
+				context3d.setRenderToBackBuffer();
+				context3d.clear(0,0,0,0,0,0,0xFFFFFFFF);	// clear depth buffer to 0s
+				
+			}
 			context3d.setCulling(Context3DTriangleFace.BACK);
-			context3d.setRenderToBackBuffer();
-			context3d.clear(0,0,0,0,0,0,0xFFFFFFFF);	// clear depth buffer to 0s
-			
 			_renderBranch(M,shadows);
-						
+									
 			// ----- show current rendered stuffs ---------------------------
-			if (toBmd!=null)	context3d.drawToBitmapData(toBmd);
-			context3d.present();
+			//if (renderTarg=="bitmapData")	context3d.drawToBitmapData(toBmd);
+			if (renderTarg!="texture")
+				context3d.present();
 			
 			// ----- calculate performance stats ----------------------------
 			renderTime=getTimer()-renderTime;
@@ -1464,6 +1475,25 @@
 			fpsStats = "stage3D:"+viewWidth+"x"+viewHeight+"  drawCalls:"+drawCalls+"  numMeshes:"+numMeshes+"  tris:"+trisRendered+"  fps:"+int(1000/aveT)+"  frameT:"+frameT+"  renderT:"+renderTime+"  Mem:"+int(System.totalMemory/1048576)+"MBs";
 			drawCalls = 0;
 			trisRendered = 0;
+		}//endfunction
+		
+		private static var outTex:Texture;
+		
+		/**
+		*
+		*/
+		public static function renderWithBloom(stage:Stage,M:Mesh) : void
+		{
+			if (context3d==null)	{getContext(stage);	return;}
+			prevType = -1;
+			prevTex=null;
+			prevEnv=null;
+			prevNorm=null;
+			prevProg=null;
+			renderBranch(stage,M,false,"texture");
+			if (bloomFilterData==null) 
+				bloomFilterData = new BloomFilterData(context3d);
+			bloomFilterData.render(outTex);
 		}//endfunction
 		
 		/**
@@ -1682,7 +1712,7 @@
 					context3d.setProgramConstantsFromVector("fragment", 0, Vector.<Number>([1,20,20*20,1022/1024])); 	// fc0, 
 					
 					// ----- camera parameters ----------------------------
-					context3d.setProgramConstantsFromVector(Context3DProgramType.VERTEX, 0, Vector.<Number>([nearClip,farClip,focalL,1]));	// set vc register 0
+					context3d.setProgramConstantsFromVector("vertex", 0, Vector.<Number>([nearClip,farClip,focalL,1]));	// set vc register 0
 							
 					// ----- render each of the mesh ----------------------
 					for (i=0; i<R.length; i++)
@@ -1693,7 +1723,7 @@
 						{
 							// ----- set transform parameters for this mesh to context3d ----
 							var T:Matrix4x4 = viewT.mult(M.workingTransform);	// determine object transform
-							context3d.setProgramConstantsFromVector(Context3DProgramType.VERTEX, 1, Vector.<Number>([T.aa,T.ab,T.ac,T.ad,T.ba,T.bb,T.bc,T.bd,T.ca,T.cb,T.cc,T.cd,0,0,0,1]));	// set vc register 1,2,3,4
+							context3d.setProgramConstantsFromVector("vertex", 1, Vector.<Number>([T.aa,T.ab,T.ac,T.ad,T.ba,T.bb,T.bc,T.bd,T.ca,T.cb,T.cc,T.cd,0,0,0,1]));	// set vc register 1,2,3,4
 							
 							// ----- set precompiled AGAL instrs to render --------
 							if (prevProg!=M.depthProgram) context3d.setProgram(M.depthProgram);	// this mesh program that will render to depth buffer
@@ -3341,8 +3371,8 @@
 			else
 				s = "mov ft0, fc0.zzzz\n";				// ft0 = 1,1,1,1
 			
-			s +=	"mov ft5 fc0.xxxx\n"+				// ft5= 0,0,0,0 diffuse lighting accu
-					"mov ft6 fc0.xxxx\n"+				// ft6= 0,0,0,0 specular highlights accu
+			s +=	"mov ft5, fc0.xxxx\n"+				// ft5= 0,0,0,0 diffuse lighting accu
+					"mov ft6, fc0.xxxx\n"+				// ft6= 0,0,0,0 specular highlights accu
 					"nrm ft1.xyz, v1.xyz\n";			// normalized vertex normal
 			
 			if (hasNorm)	// if has normal mapping
@@ -3611,12 +3641,205 @@
 			return s;
 		}//endfunction
 		
+		private static var bloomFilterData:BloomFilterData = null;
 	}//endclass
 }//endpackage
 
+import flash.display3D.Context3D;
+import flash.display3D.Context3DTriangleFace;
+import flash.display3D.textures.Texture;
+import flash.display3D.VertexBuffer3D;
+import flash.display3D.IndexBuffer3D;
+import flash.display3D.Program3D;
+	
 import flash.geom.Vector3D;
+import core3D.*;
 
-import core3D.VertexData;
+class BloomFilterData
+{
+	public var cutOff:Number = 0.9;
+	public var blurX:uint = 10;
+	public var blurY:uint = 10;
+	public var intensity:Number=1;
+	private var vertexBuffer:VertexBuffer3D = null;
+	private var indexBuffer:IndexBuffer3D = null;
+	private var treshProg:Program3D = null;
+	private var hBlurProg:Program3D = null;
+	private var vBlurProg:Program3D = null;
+	private var tmpA:Texture = null;
+	private var tmpB:Texture = null;
+	
+	private static var context3d:Context3D = null;
+	private static var uploadedPrograms:Array = null;
+	
+	/**
+	*
+	*/
+	public function BloomFilterData(context:Context3D,xBlur:uint=15,yBlur:uint=15,cutOff:Number=0.9,intensity:Number=2) : void
+	{
+		blurX = xBlur;
+		blurY = yBlur;
+		this.cutOff = cutOff;
+		this.intensity = intensity;
+		context3d = context;
+				
+		// ----- set to vertexBuffer draw a large rectangle
+		vertexBuffer=context3d.createVertexBuffer(4, 6);	// vx,vy,vz,vw,u,v
+		vertexBuffer.uploadFromVector(Vector.<Number>([-1,1,1,1,0,0, 1,1,1,1,1,0, 1,-1,1,1,1,1, -1,-1,1,1,0,1]), 0, 4);
+		indexBuffer=context3d.createIndexBuffer(6);
+		indexBuffer.uploadFromVector(Vector.<uint>([0,1,2,0,2,3]),0,6);
+		
+		// ----- create 
+		var vertSrc:String = 
+		"mov op, va0\n" + 
+		"mov v0, va1.xyxy\n";	// output uv to v0
+		
+		treshProg = createProgram(vertSrc,getTresholdFrgSrc());
+		hBlurProg = createProgram(vertSrc,getBlurFragSrc(blurX,true));
+		vBlurProg = createProgram(vertSrc,getBlurFragSrc(blurY,false,true));
+	}//endConstr
+		
+	/**
+	* pass in the scene rendered to tex, with width and height of tex
+	*/
+	public function render(tex:Texture,w:int=256,h:int=256):void
+	{
+		// ----- initialise and clear bindings
+		if (tmpA==null)	tmpA = context3d.createTexture(w,h,"bgra", true);
+		if (tmpB==null)	tmpB = context3d.createTexture(w,h,"bgra", true);
+		var i:int=0;
+		var stepSize:Number = 1/w;
+		var P:Vector.<Number> = null;
+		for (i=0; i<=6; i++)	context3d.setVertexBufferAt(i, null);
+		for (i=0; i<=6; i++)	context3d.setTextureAt(i,null);
+		
+		// ----- render threshold texture
+		//context3d.setRenderToBackBuffer();
+		context3d.setRenderToTexture(tmpA,false,4);	// output to tmpA
+		context3d.clear(0,0,0,0,0,0,0xFFFFFFFF);	// clear depth buffer to 0s
+		context3d.setTextureAt(0,tex);				// input as tex
+		context3d.setCulling("none");	
+		context3d.setVertexBufferAt(0, vertexBuffer, 0, "float4");	// va0 to expect vertices
+		context3d.setVertexBufferAt(1, vertexBuffer, 4, "float2");	// va1 to expect UV
+		context3d.setProgramConstantsFromVector("fragment", 0, Vector.<Number>([1, stepSize, cutOff, 1-cutOff]));
+		context3d.setProgram(treshProg);			// use threshold program to draw
+		context3d.drawTriangles(indexBuffer);
+		
+		// ----- render x blur
+		//context3d.setRenderToBackBuffer();
+		context3d.setRenderToTexture(tmpB,false,4);	// output to tmpB
+		context3d.clear(0,0,0,0,0,0,0xFFFFFFFF);	// clear depth buffer to 0s
+		context3d.setTextureAt(0,tmpA);				// input as tmpA
+		P = new Vector.<Number>();
+		for (i=0; i<=blurX; i++)
+			P.push(intensity*Math.exp(-i*i/(2*blurX))/(Math.sqrt(blurX)*Math.sqrt(2*Math.PI)));
+		while (P.length%4!=0)	P.push(0);
+		context3d.setProgramConstantsFromVector("fragment",1,P);
+		context3d.setProgram(hBlurProg);
+		context3d.drawTriangles(indexBuffer);
+		
+		// ----- render y blur on x blur
+		context3d.setRenderToBackBuffer();
+		context3d.clear(0,0,0,0,0,0,0xFFFFFFFF);	// clear depth buffer to 0s
+		context3d.setTextureAt(0,tmpB);				// bind glow texture to 0
+		context3d.setTextureAt(1,tex);				// bind original texture to 1
+		stepSize = 1/h;
+		context3d.setProgramConstantsFromVector("fragment", 0, Vector.<Number>([1, stepSize, cutOff, 1-cutOff]));
+		P = new Vector.<Number>();
+		for (i=0; i<=blurY; i++)
+			P.push(intensity*Math.exp(-i*i/(2*blurY))/(Math.sqrt(blurY)*Math.sqrt(2*Math.PI)));
+		while (P.length%4!=0)	P.push(0);
+		context3d.setProgramConstantsFromVector("fragment",1,P);
+		context3d.setProgram(vBlurProg);
+		context3d.drawTriangles(indexBuffer);
+		
+		context3d.present();
+		
+		for (i=0; i<=6; i++)	context3d.setVertexBufferAt(i, null);
+		for (i=0; i<=6; i++)	context3d.setTextureAt(i,null);
+		
+	}//endfunction
+	
+	/**
+	*
+	*/
+	private static function getTresholdFrgSrc() : String
+	{
+		var s:String = 
+			"tex ft0, v0, fs0 <2d,linear,mipnone,clamp>\n"+ // ft0 = tex color val
+			"sub ft0.xyz, ft0.xyz, fc0.zzz\n"+				// ft0.xyz-=cutoff
+			"div ft0.xyz, ft0.xyz, fc0.www\n"+				// ft0.xyz = (rgb-cutoff)/(1-cutoff)
+			"sat oc, ft0\n";
+		return s;
+	}//endfunction
+	
+	/**
+	* 17*blr+9 instrs
+	*/
+	private static function getBlurFragSrc(blr:uint,dirX:Boolean=true,merge:Boolean=false):String
+	{
+		var s:String = 
+		"tex ft2, v0, fs0 <2d,linear,mipnone,clamp>\n"+	// ft2 = tex color val
+		"mul ft2.xyz, ft2.xyz, fc1.xxx\n"+				// ft2.xyz = tex color * p
+		"mov ft1.xyzw, fc0.yyyy\n";						// ft1.xyzw = stepSize
+		var a:String = "xyzw";
+		for (var i:int=1; i<=blr; i++)	// 17*n instrs
+		{
+			var ii:int = i%4;
+			var sel:String = a.charAt(ii)+a.charAt(ii)+a.charAt(ii)+"";
+			
+			s +="mov ft0, v0\n";						// ft0 = UV;
+			if (dirX)	s+="add ft0.x, ft0.x, ft1.x\n";	// ft0 = UV with x offset
+			else		s+="add ft0.y, ft0.y, ft1.y\n";	// ft0 = UV with y offset
+			s +=
+			"tex ft7, ft0, fs0 <2d,linear,mipnone,clamp>\n"+ // texture color val
+			"mul ft7, ft7, fc"+int(i/4+1)+"."+sel+"\n"+	// ft7 = color * p
+			"add ft2.xyz, ft2.xyz, ft7.xyz\n"+			// ft2+= accumulated color vals
+			"mov ft0, v0\n";							// ft0 = UV;
+			if (dirX)	s+="sub ft0.x, ft0.x, ft1.x\n";	// ft0 = UV with x offset
+			else		s+="sub ft0.y, ft0.y, ft1.y\n";	// ft0 = UV with y offset
+			s +=
+			"tex ft7, ft0, fs0 <2d,linear,mipnone,clamp>\n"+ // texture color val
+			"mul ft7, ft7, fc"+int(i/4+1)+"."+sel+"\n"+	// ft7 = color * p
+			"add ft2.xyz, ft2.xyz, ft7.xyz\n"+			// ft2+= accumulated color vals
+			"add ft1.xyzw, ft1.xyzw, fc0.yyyy\n";		// increment dist by step size
+		}
+		
+		if (merge)
+		s+= "tex ft1, v0, fs1 <2d,linear,mipnone,clamp>\n"+	// original texture color
+			"add ft2.xyz, ft2.xyz, ft1.xyz\n";			// add original texture color
+		
+		s+="mov oc, ft2\n";								// output combined glow color
+		
+		return s;
+	}//endfunction
+	
+	/**
+	* given vertex and fragment sources create upload and returns a shader program
+	*/
+	private static function createProgram(agalVertexSource:String,agalFragmentSource:String) : Program3D
+	{
+		// ----- chk for already cached program for reuse
+		var idstr:String = agalVertexSource+"\n\n"+agalFragmentSource;
+		if (uploadedPrograms==null)	uploadedPrograms=[];
+		var idx:int=uploadedPrograms.indexOf(idstr);
+		if (idx!=-1) return uploadedPrograms[idx+1];	// returns previously compiled program
+		
+		// ----- build new program if no cached program is found
+		var prog:Program3D = null;
+		var agalVertex:AGALMiniAssembler=new AGALMiniAssembler();
+		var agalFragment:AGALMiniAssembler=new AGALMiniAssembler();
+		agalVertex.assemble("vertex", agalVertexSource);
+		agalFragment.assemble("fragment", agalFragmentSource);
+		prog = context3d.createProgram();
+		prog.upload(agalVertex.agalcode, agalFragment.agalcode);
+		
+		// ----- cache program for future reuse, upload is expensive
+		uploadedPrograms.push(idstr,prog);
+		
+		return prog;
+	}//endfunction
+}//endclass
 
 /**
 * private class to hold collision geometry data, for static shapes only
