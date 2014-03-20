@@ -50,9 +50,7 @@
 		
 		private var collisionGeom:CollisionGeometry;	// for detecting collision on this mesh geometry
 		private var illuminable:Boolean = true;			// specifies if this mesh can be illuminated with directional lights
-		private var ambient:Vector3D;					// ambient lighting factors {red,green,blue}
-		private var specular:Point;						// specular lighting factors {strength,hardness}
-		private var fog:Vector3D;						// linear fog blending factors {red,green,blue,maxDist}
+		private var material:Material;					// contains {ambR,ambG,ambB,specStr,specHard,fogR,fogG,fogB,fogFar}
 		
 		public var trisCnt:int;							// number of triangles to tell program to draw
 		private var texture:BitmapData;					// texture of current mesh, can be null
@@ -118,6 +116,7 @@
 			setTexture(bmd);
 			childMeshes = new Vector.<Mesh>();	// child meshes list
 			transform = new Matrix4x4();
+			material = new Material();
 			setAmbient(0.3, 0.3, 0.3);			// R,G,B
 			setSpecular(0.2,5);					// strength,hardness
 			setFog();
@@ -125,7 +124,7 @@
 		}//endconstructor
 		
 		/**
-		* calculate tangents for normal mapping
+		* calculate tangents for normal mapping, quite heavy calculation
 		* input: [vx,vy,vz,nx,ny,nz,u,v,...]
 		* output: [vx,vy,vz,nx,ny,nz,tx,ty,tz,u,v,...]
 		*/
@@ -232,9 +231,7 @@
 			m.normMap = normMap;
 			m.hasNorm = hasNorm;
 			m.hasSpec = hasSpec;
-			m.ambient = ambient;
-			m.specular = specular;
-			m.fog = fog;
+			m.material = material.clone();
 			m.vertexBuffer = vertexBuffer;
 			m.indexBuffer = indexBuffer;
 			m.textureBuffer = textureBuffer;
@@ -327,14 +324,14 @@
 			}
 						
 			var tex:BitmapData = this.texture;
-			var spec:BitmapData = this.normMap;
+			var norm:BitmapData = this.normMap;
 			var hNorm:Boolean = this.hasNorm;
 			var hSpec:Boolean = this.hasSpec;
 			for (var i:int=childMeshes.length-1; i>-1; i--)
 			{
 				var c:Mesh = childMeshes[i].mergeTree();
 				if (tex==null)	tex = c.texture;
-				if (spec==null)	{spec = c.normMap; hNorm=c.hasNorm; hSpec=c.hasSpec;}
+				if (norm==null)	{norm = c.normMap; hNorm=c.hasNorm; hSpec=c.hasSpec;}
 				var cT:Matrix4x4 = c.transform;
 				var vD:Vector.<Number> = c.vertData;
 				var iD:Vector.<uint> = c.idxsData;
@@ -370,12 +367,11 @@
 			
 			var m:Mesh = new Mesh();
 			m.illuminable = illuminable;
-			m.ambient = ambient;
-			m.specular = specular;
+			m.material = material.clone();
 			m.transform = transform;
 			m.setGeometry(nV,nI);
 			m.texture = tex;
-			m.normMap = spec;
+			m.normMap = norm;
 			m.hasNorm = hNorm;
 			m.hasSpec = hSpec;
 			return m;
@@ -982,13 +978,15 @@
 		{
 			var amFn:Function = function(M:Mesh,pM:Mesh):Boolean
 			{
-				if ((M.ambient!=null && M.ambient.x==1 && M.ambient.y==1 && M.ambient.z==1) ||
+				if ((M.material.ambR==1 && M.material.ambG==1 && M.material.ambB==1) ||
 					(red==1 && green==1 && blue==1))
 				{	
 					M.stdProgram=null;
 					M.shadowProgram=null;
 				}
-				M.ambient = new Vector3D(red,green,blue);
+				M.material.ambR = red;
+				M.material.ambG = green;
+				M.material.ambB = blue;
 				return propagate;
 			}
 			treeTransverse(this,amFn);
@@ -1001,13 +999,14 @@
 		{
 			var spFn:Function = function(M:Mesh,pM:Mesh):Boolean
 			{
-				if ((M.specular!=null && M.specular.x==0) ||
+				if ((M.material.specStr==0) ||
 					strength==0)
 				{	
 					M.stdProgram=null;
 					M.shadowProgram=null;
 				}
-				M.specular = new Point(strength,hardness);
+				M.material.specStr = strength;
+				M.material.specHard = hardness;
 				return propagate;
 			}
 			treeTransverse(this,spFn);
@@ -1020,12 +1019,15 @@
 		{
 			var fgFn:Function = function(M:Mesh,pM:Mesh):Boolean
 			{
-				M.fog = new Vector3D(	Math.max(Math.min(red,1),0),
-										Math.max(Math.min(green,1),0),
-										Math.max(Math.min(blue,1),0),
-										fogDist);
-				if (M.stdProgram!=null)		{M.stdProgram=null;}
-				if (M.shadowProgram!=null)	{M.shadowProgram=null;}
+				if (fogDist!=M.material.fogFar)
+				{
+					M.stdProgram=null;
+					M.shadowProgram=null;
+				}
+				M.material.fogR = red;
+				M.material.fogG = green;
+				M.material.fogB = blue;
+				M.material.fogFar = fogDist;
 				return propagate;
 			}
 			treeTransverse(this,fgFn);
@@ -1074,18 +1076,18 @@
 			if (dataType==_typeP)	illuminable=false;	// no lighting for particles
 			if (illuminable==false)	numLights=0;
 			
-			var vertSrc:String = _stdPersVertSrc(numLights>0,fog.w>0);
+			var vertSrc:String = _stdPersVertSrc(numLights>0,material.fogFar>0);
 			if (dataType==_typeV)		vertSrc = _stdReadVertSrc() + vertSrc;
 			else if (dataType==_typeP)	vertSrc = _particlesVertSrc() + vertSrc;
 			else if (dataType==_typeM)	vertSrc = _meshesVertSrc() + vertSrc;
 			else if (dataType==_typeS)	vertSrc = _skinningVertSrc(numLights>0) + vertSrc;
 			
 			var fragSrc:String = null;
-			if (texture!=null && numLights==0 && ambient.x==1 && ambient.y==1 && ambient.z==1 && specular.x==0 && fog.w==0)
+			if (texture!=null && numLights==0 && material.ambR==1 && material.ambG==1 && material.ambB==1 && material.specStr==0 && material.fogFar==0)
 				fragSrc = "tex oc, v2, fs0 <2d,linear,mipnone,repeat>\n";
 			else 
-				fragSrc = _stdFragSrc(numLights,texture!=null,useMipMapping,hasNorm,hasSpec,fog.w>0,envMapBuffer!=null,false);
-			var shadowFragSrc:String = _stdFragSrc(numLights,texture!=null,useMipMapping,hasNorm,hasSpec,fog.w>0,envMapBuffer!=null,true);
+				fragSrc = _stdFragSrc(numLights,texture!=null,useMipMapping,hasNorm,hasSpec,material.fogFar>0,envMapBuffer!=null,false);
+			var shadowFragSrc:String = _stdFragSrc(numLights,texture!=null,useMipMapping,hasNorm,hasSpec,material.fogFar>0,envMapBuffer!=null,true);
 			
 			stdProgram = createProgram(vertSrc,fragSrc);
 			shadowProgram = createProgram(vertSrc,shadowFragSrc);
@@ -1544,9 +1546,9 @@
 						context3d.setProgramConstantsFromVector("vertex", 1, Vector.<Number>([T.aa,T.ab,T.ac,T.ad,T.ba,T.bb,T.bc,T.bd,T.ca,T.cb,T.cc,T.cd,0,0,0,1]));	// set vc register 1,2,3,4
 						
 						// ----- ambient, specular, fog factors for this mesh -----------
-						context3d.setProgramConstantsFromVector("fragment", 1, Vector.<Number>([M.ambient.x, M.ambient.y, M.ambient.z,0]));	// r,g,b,0
-						context3d.setProgramConstantsFromVector("fragment", 2, Vector.<Number>([ M.specular.x,M.specular.y+1, M.specular.y, 0]));	// st,h1,h0,0
-						context3d.setProgramConstantsFromVector("fragment", 3, Vector.<Number>([M.fog.x,M.fog.y,M.fog.z,M.fog.w]));
+						context3d.setProgramConstantsFromVector("fragment", 1, Vector.<Number>([M.material.ambR, M.material.ambG, M.material.ambB,0]));					// r,g,b,0
+						context3d.setProgramConstantsFromVector("fragment", 2, Vector.<Number>([ M.material.specStr,M.material.specHard+1,M.material.specHard, 0]));	// st,h1,h0,0
+						context3d.setProgramConstantsFromVector("fragment", 3, Vector.<Number>([M.material.fogR,M.material.fogG,M.material.fogB,M.material.fogFar]));	// 
 						
 						// ----- sets vertices info for this mesh to context3d ----------
 						if (M.dataType==_typeV)
@@ -4516,5 +4518,36 @@ class TriData
 		var nz:Number = px*qy-py*qx;	//	normal z for the triangle
 		
 		return new Vector3D(nx,ny,nz);
+	}//endfunction
+}//endclass
+
+/**
+ * private class to hold ambient rgb, spec strength and hardness of a mesh
+ */
+class Material
+{
+	public var ambR:Number = 0.5;
+	public var ambG:Number = 0.5;
+	public var ambB:Number = 0.5;
+	public var fogR:Number = 0;
+	public var fogG:Number = 0;
+	public var fogB:Number = 0;
+	public var fogFar:Number = 0;
+	public var specStr:Number = 0.5;
+	public var specHard:Number = 0.5;
+		
+	public function clone():Material
+	{
+		var lum:Material = new Material();
+		lum.ambR = ambR;
+		lum.ambG = ambG;
+		lum.ambB = ambB;
+		lum.fogR = fogR;
+		lum.fogG = fogG;
+		lum.fogB = fogB;
+		lum.fogFar = fogFar;
+		lum.specStr = specStr;
+		lum.specHard = specHard;
+		return lum;
 	}//endfunction
 }//endclass
