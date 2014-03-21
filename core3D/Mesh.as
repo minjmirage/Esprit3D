@@ -152,7 +152,7 @@
 			var v:Vector3D = null;
 			
 			if (TBRV==null)	TBRV=new Vector.<Vector3D>();
-			for (i=0; i<TBRV.length; i++)	{v=TBRV[i]; v.x=0; v.y=0; v.z=0;}
+			for (i=TBRV.length-1; i>=0; i--)	{v=TBRV[i]; v.x=0; v.y=0; v.z=0;}	// reset vector
 			for (i=TBRV.length; i<n; i++)	TBRV.push(new Vector3D(0,0,0));
 			
 			n = idxs.length;
@@ -173,10 +173,12 @@
 				var p0:uint = i0*8+6;
 				var p1:uint = i1*8+6;
 				var p2:uint = i2*8+6;
-					ax		  = vData[p1++] - vData[p0++];	// vector a in uv space
-				var	ay:Number = vData[p1] - vData[p0--];
-				var bx:Number = vData[p2++] - vData[p0++];	// vector b in uv space
-				var by:Number = vData[p2] - vData[p0];
+				var tx:Number = vData[p0++];
+				var ty:Number = vData[p0];
+					ax		  = vData[p1++] - tx;	// vector a in uv space
+				var	ay:Number = vData[p1] - ty;
+				var bx:Number = vData[p2++] - tx;	// vector b in uv space
+				var by:Number = vData[p2] - ty;
 				var q:Number = 1/(by-ay*bx/ax);
 				var p:Number = -q*bx/ax;
 				
@@ -184,17 +186,20 @@
 				p0 = i0*8;
 				p1 = i1*8;
 				p2 = i2*8;
-				ax = vData[p1++] - vData[p0++];
-				ay = vData[p1++] - vData[p0++];
-				var az:Number = vData[p1] - vData[p0];	// vector a in object space
+				tx = vData[p0++];
+				ty = vData[p0++];
+				var tz:Number = vData[p0];
+				ax = vData[p1++] - tx;
+				ay = vData[p1++] - ty;
+				var az:Number = vData[p1] - tz;		// vector a in object space
 				p0 = i0*8;
-				bx = vData[p2++] - vData[p0++];
-				by = vData[p2++] - vData[p0++];
-				var bz:Number = vData[p2] - vData[p0];	// vector b in object space
+				bx = vData[p2++] - tx;
+				by = vData[p2++] - ty;
+				var bz:Number = vData[p2] - tz;		// vector b in object space
 				
-				var tx:Number = p*ax+q*bx;
-				var ty:Number = p*ay+q*by;
-				var tz:Number = p*az+q*bz;
+				tx = p*ax+q*bx;
+				ty = p*ay+q*by;
+				tz = p*az+q*bz;
 				v = TBRV[i0];		v.x+=tx; v.y+=ty; v.z+=tz; v.w++;
 				v = TBRV[i1];		v.x+=tx; v.y+=ty; v.z+=tz; v.w++;
 				v = TBRV[i2];		v.x+=tx; v.y+=ty; v.z+=tz; v.w++;
@@ -206,17 +211,22 @@
 			for (i=0; i<n; i++)	
 			{
 				v = TBRV[i];
-				p0 = i*8;
-				var nv:Vector3D = new Vector3D(vData[p0++],vData[p0++],vData[p0++]);
-				if (v.length>0)
+				p0 = i*8+3;
+				ax = vData[p0++];
+				ay = vData[p0++];
+				az = vData[p0];
+				if (ax*ax+ay*ay+az*az>0)
 				{	// cross product to make sure 90 degrees
-					v = nv.crossProduct(v);
-					v.normalize();
+					tx = v.y*az - v.z*ay;	// cross product tangent
+					ty = v.z*ax - v.x*az;
+					tz = v.x*ay - v.y*ax;
+					var tl:Number = 1/Math.sqrt(tx*tx+ty*ty+tz*tz);
+					tx*=tl; ty*=tl; tz*=tl;
 				}
 				p0 = i*8;
 				R.push(	vData[p0++],vData[p0++],vData[p0++],	// vx,vy,vz
 						vData[p0++],vData[p0++],vData[p0++],	// nx,ny,nz
-						v.x,v.y,v.z,							// tx,ty,tz
+						tx,ty,tz,								// tx,ty,tz
 						vData[p0++],vData[p0++]);				// u,v
 			}//endfor
 			
@@ -1558,7 +1568,7 @@
 						
 						// ----- ambient, specular, fog factors for this mesh -----------
 						context3d.setProgramConstantsFromVector("fragment", 1, Vector.<Number>([M.material.ambR, M.material.ambG, M.material.ambB,0]));					// r,g,b,0
-						context3d.setProgramConstantsFromVector("fragment", 2, Vector.<Number>([ M.material.specStr,M.material.specHard+1,M.material.specHard, 0]));	// st,h1,h0,0
+						context3d.setProgramConstantsFromVector("fragment", 2, Vector.<Number>([M.material.specStr,M.material.specHard+1,M.material.specHard, 0]));	// st,h1,h0,0
 						context3d.setProgramConstantsFromVector("fragment", 3, Vector.<Number>([M.material.fogR,M.material.fogG,M.material.fogB,M.material.fogFar]));	// 
 						
 						// ----- sets vertices info for this mesh to context3d ----------
