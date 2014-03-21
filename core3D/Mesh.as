@@ -128,6 +128,7 @@
 		* input: [vx,vy,vz,nx,ny,nz,u,v,...]
 		* output: [vx,vy,vz,nx,ny,nz,tx,ty,tz,u,v,...]
 		*/
+		public static var TBRV:Vector.<Vector3D> = null;
 		public static function calcTangentBasis(idxs:Vector.<uint>,vData:Vector.<Number>) : Vector.<Number>
 		{
 			/*
@@ -150,15 +151,16 @@
 			var n:int=vData.length/8;
 			var v:Vector3D = null;
 			
-			var RV:Vector.<Vector3D> = new Vector.<Vector3D>();
-			for (i=0; i<n; i++)	RV.push(new Vector3D(0,0,0));
+			if (TBRV==null)	TBRV=new Vector.<Vector3D>();
+			for (i=0; i<TBRV.length; i++)	{v=TBRV[i]; v.x=0; v.y=0; v.z=0;}
+			for (i=TBRV.length; i<n; i++)	TBRV.push(new Vector3D(0,0,0));
 			
 			n = idxs.length;
-			for (i=0; i<n; i+=3)	// for each triangle
+			for (i=0; i<n;)	// for each triangle
 			{
-				var i0:uint = idxs[i];		// tri point index 0
-				var i1:uint = idxs[i+1];	// tri point index 1 
-				var i2:uint = idxs[i+2];	// tri point index 2
+				var i0:uint = idxs[i];	i++;	// tri point index 0
+				var i1:uint = idxs[i];	i++;	// tri point index 1 
+				var i2:uint = idxs[i];	i++;	// tri point index 2
 				
 				var pax:Number = vData[i1*8+6] - vData[i0*8+6];
 				var ax:Number = pax;			
@@ -168,27 +170,34 @@
 				} while (ax*ax>pax*pax);
 				tmp=i2; i2=i1; i1=i0; i0=tmp;
 				
-					ax	 	  = vData[i1*8+6] - vData[i0*8+6];
-				var	ay:Number = vData[i1*8+7] - vData[i0*8+7];
-				var bx:Number = vData[i2*8+6] - vData[i0*8+6];
-				var by:Number = vData[i2*8+7] - vData[i0*8+7];
+				var p0:uint = i0*8+6;
+				var p1:uint = i1*8+6;
+				var p2:uint = i2*8+6;
+					ax		  = vData[p1++] - vData[p0++];	// vector a in uv space
+				var	ay:Number = vData[p1] - vData[p0--];
+				var bx:Number = vData[p2++] - vData[p0++];	// vector b in uv space
+				var by:Number = vData[p2] - vData[p0];
 				var q:Number = 1/(by-ay*bx/ax);
 				var p:Number = -q*bx/ax;
 				
 				// find tangent vector from p q
-				ax = vData[i1*8] - vData[i0*8];
-				ay = vData[i1*8+1] - vData[i0*8+1];
-				var az:Number = vData[i1*8+2] - vData[i0*8+2];	// vector a in object space
-				bx = vData[i2*8] - vData[i0*8];
-				by = vData[i2*8+1] - vData[i0*8+1];
-				var bz:Number = vData[i2*8+2] - vData[i0*8+2];	// vector b in object space
+				p0 = i0*8;
+				p1 = i1*8;
+				p2 = i2*8;
+				ax = vData[p1++] - vData[p0++];
+				ay = vData[p1++] - vData[p0++];
+				var az:Number = vData[p1] - vData[p0];	// vector a in object space
+				p0 = i0*8;
+				bx = vData[p2++] - vData[p0++];
+				by = vData[p2++] - vData[p0++];
+				var bz:Number = vData[p2] - vData[p0];	// vector b in object space
 				
 				var tx:Number = p*ax+q*bx;
 				var ty:Number = p*ay+q*by;
 				var tz:Number = p*az+q*bz;
-				v = RV[i0];		v.x+=tx; v.y+=ty; v.z+=tz; v.w++;
-				v = RV[i1];		v.x+=tx; v.y+=ty; v.z+=tz; v.w++;
-				v = RV[i2];		v.x+=tx; v.y+=ty; v.z+=tz; v.w++;
+				v = TBRV[i0];		v.x+=tx; v.y+=ty; v.z+=tz; v.w++;
+				v = TBRV[i1];		v.x+=tx; v.y+=ty; v.z+=tz; v.w++;
+				v = TBRV[i2];		v.x+=tx; v.y+=ty; v.z+=tz; v.w++;
 			}//endfor
 			
 			// ----- get tangent results for each corresponding point
@@ -196,17 +205,19 @@
 			n = vData.length/8;
 			for (i=0; i<n; i++)	
 			{
-				v = RV[i];
-				var nv:Vector3D = new Vector3D(vData[i*8+0],vData[i*8+1],vData[i*8+2]);
+				v = TBRV[i];
+				p0 = i*8;
+				var nv:Vector3D = new Vector3D(vData[p0++],vData[p0++],vData[p0++]);
 				if (v.length>0)
 				{	// cross product to make sure 90 degrees
 					v = nv.crossProduct(v);
-					v.scaleBy(1/v.length);
+					v.normalize();
 				}
-				R.push(	vData[i*8+0],vData[i*8+1],vData[i*8+2],	// vx,vy,vz
-						vData[i*8+3],vData[i*8+4],vData[i*8+5],	// nx,ny,nz
-						v.x,v.y,v.z,	// tx,ty,tz
-						vData[i*8+6],vData[i*8+7]);				// u,v
+				p0 = i*8;
+				R.push(	vData[p0++],vData[p0++],vData[p0++],	// vx,vy,vz
+						vData[p0++],vData[p0++],vData[p0++],	// nx,ny,nz
+						v.x,v.y,v.z,							// tx,ty,tz
+						vData[p0++],vData[p0++]);				// u,v
 			}//endfor
 			
 			return R;
@@ -2920,6 +2931,7 @@
 					m.dataType = type;
 					m.trisCnt = il/3;	// number of tris to render
 					m.collisionGeom = new CollisionGeometry(verticesData,indicesData);
+					/*
 					if (context3d!=null && type==_typeV)
 					{	// upload to buffers directly from 
 						var oldPosn:int = ba.position;
@@ -2931,7 +2943,7 @@
 						m.indexBuffer.uploadFromByteArray(ba,iPosn,0,il);
 						//if (Mesh.debugTf!=null)	Mesh.debugTf.appendText("Upload from ByteArray verts:"+vl/8+" idxs:"+il+" vPosn:"+vPosn+" iPosn:"+iPosn+" oPosn:"+oldPosn+"\n");
 						ba.position = oldPosn;
-					}
+					}*/
 				}
 				
 				if (pstk.length>0)			// add this mesh to parent
