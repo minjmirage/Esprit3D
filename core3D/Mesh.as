@@ -37,7 +37,7 @@
 	* Author: Lin Minjiang	2014/03/13	updated
 	* Known Issues: No farClip, shadowMapping range too short
 	*/
-	public class Mesh
+	public final class Mesh
 	{
 		public var childMeshes:Vector.<Mesh>;			// list of children meshes
 		public var vertData:Vector.<Number>;			// vertices, normals and UV data [vx,vy,vz,nx,ny,nz,u,v, ...] can be null
@@ -122,116 +122,6 @@
 			setFog();
 			progLightCnt = 0;
 		}//endconstructor
-		
-		/**
-		* calculate tangents for normal mapping, quite heavy calculation
-		* input: [vx,vy,vz,nx,ny,nz,u,v,...]
-		* output: [vx,vy,vz,nx,ny,nz,tx,ty,tz,u,v,...]
-		*/
-		public static var TBRV:Vector.<Vector3D> = null;
-		public static function calcTangentBasis(idxs:Vector.<uint>,vData:Vector.<Number>) : Vector.<Number>
-		{
-			/*
-			let a be vector from p to q
-			let b be vector from p to r
-
-			p(ax,ay) + q(bx,by) s.t    (y axis)
-			p*ay + q*by = 1  ... (1)
-			p*ax + q*bx = 0  ... (2)
-
-			p*ax = -q*bx
-			p = -q*bx/ax   ... (2a)
-			sub in (1)
-
-			-q*ay*bx/ax + q*by = 1
-			q = 1/(by-ay*bx/ax)
-			*/
-			
-			var i:int=0;
-			var n:int=vData.length/8;
-			var v:Vector3D = null;
-			
-			if (TBRV==null)	TBRV=new Vector.<Vector3D>();
-			for (i=TBRV.length-1; i>=0; i--)	{v=TBRV[i]; v.x=0; v.y=0; v.z=0;}	// reset vector
-			for (i=TBRV.length; i<n; i++)	TBRV.push(new Vector3D(0,0,0));
-			
-			n = idxs.length;
-			for (i=0; i<n;)	// for each triangle
-			{
-				var i0:uint = idxs[i];	i++;	// tri point index 0
-				var i1:uint = idxs[i];	i++;	// tri point index 1 
-				var i2:uint = idxs[i];	i++;	// tri point index 2
-				
-				var pax:Number = vData[i1*8+6] - vData[i0*8+6];
-				var ax:Number = pax;			
-				do {
-					var tmp:uint=i0; i0=i1; i1=i2; i2=tmp;	
-					ax = vData[i1*8+6] - vData[i0*8+6];
-				} while (ax*ax>pax*pax);
-				tmp=i2; i2=i1; i1=i0; i0=tmp;
-				
-				var p0:uint = i0*8+6;
-				var p1:uint = i1*8+6;
-				var p2:uint = i2*8+6;
-				var tx:Number = vData[p0++];
-				var ty:Number = vData[p0];
-					ax		  = vData[p1++] - tx;	// vector a in uv space
-				var	ay:Number = vData[p1] - ty;
-				var bx:Number = vData[p2++] - tx;	// vector b in uv space
-				var by:Number = vData[p2] - ty;
-				var q:Number = 1/(by-ay*bx/ax);
-				var p:Number = -q*bx/ax;
-				
-				// find tangent vector from p q
-				p0 = i0*8;
-				p1 = i1*8;
-				p2 = i2*8;
-				tx = vData[p0++];
-				ty = vData[p0++];
-				var tz:Number = vData[p0];
-				ax = vData[p1++] - tx;
-				ay = vData[p1++] - ty;
-				var az:Number = vData[p1] - tz;		// vector a in object space
-				p0 = i0*8;
-				bx = vData[p2++] - tx;
-				by = vData[p2++] - ty;
-				var bz:Number = vData[p2] - tz;		// vector b in object space
-				
-				tx = p*ax+q*bx;
-				ty = p*ay+q*by;
-				tz = p*az+q*bz;
-				v = TBRV[i0];		v.x+=tx; v.y+=ty; v.z+=tz; v.w++;
-				v = TBRV[i1];		v.x+=tx; v.y+=ty; v.z+=tz; v.w++;
-				v = TBRV[i2];		v.x+=tx; v.y+=ty; v.z+=tz; v.w++;
-			}//endfor
-			
-			// ----- get tangent results for each corresponding point
-			var R:Vector.<Number> = new Vector.<Number>();
-			n = vData.length/8;
-			for (i=0; i<n; i++)	
-			{
-				v = TBRV[i];
-				p0 = i*8+3;
-				ax = vData[p0++];
-				ay = vData[p0++];
-				az = vData[p0];
-				if (ax*ax+ay*ay+az*az>0)
-				{	// cross product to make sure 90 degrees
-					tx = v.y*az - v.z*ay;	// cross product tangent
-					ty = v.z*ax - v.x*az;
-					tz = v.x*ay - v.y*ax;
-					var tl:Number = 1/Math.sqrt(tx*tx+ty*ty+tz*tz);
-					tx*=tl; ty*=tl; tz*=tl;
-				}
-				p0 = i*8;
-				R.push(	vData[p0++],vData[p0++],vData[p0++],	// vx,vy,vz
-						vData[p0++],vData[p0++],vData[p0++],	// nx,ny,nz
-						tx,ty,tz,								// tx,ty,tz
-						vData[p0++],vData[p0++]);				// u,v
-			}//endfor
-			
-			return R;
-		}//endfunction
 		
 		/**
 		* does a clone of this entire branch (deep clone) and returns clone
@@ -1097,10 +987,10 @@
 			if (dataType==_typeP)	illuminable=false;	// no lighting for particles
 			if (illuminable==false)	numLights=0;
 			
-			var vertSrc:String = _stdPersVertSrc(numLights>0,material.fogFar>0);
-			if (dataType==_typeV)		vertSrc = _stdReadVertSrc() + vertSrc;
+			var vertSrc:String = _stdPersVertSrc(numLights>0,material.fogFar>0,hasNorm);
+			if (dataType==_typeV)		vertSrc = _stdReadVertSrc(numLights>0,hasNorm) + vertSrc;
 			else if (dataType==_typeP)	vertSrc = _particlesVertSrc() + vertSrc;
-			else if (dataType==_typeM)	vertSrc = _meshesVertSrc() + vertSrc;
+			else if (dataType==_typeM)	vertSrc = _meshesVertSrc(numLights>0,hasNorm) + vertSrc;
 			else if (dataType==_typeS)	vertSrc = _skinningVertSrc(numLights>0) + vertSrc;
 			
 			var fragSrc:String = null;
@@ -1118,7 +1008,7 @@
 			vertSrc = _depthCubePersVertSrc();	// common vert shader code
 			if (dataType==_typeV)		vertSrc = "mov vt0, va0\n" + vertSrc;
 			else if (dataType==_typeP)	vertSrc = _particlesVertSrc() + vertSrc;
-			else if (dataType==_typeM)	vertSrc = _meshesVertSrc(false) + vertSrc;
+			else if (dataType==_typeM)	vertSrc = _meshesVertSrc(false,false) + vertSrc;
 			else if (dataType==_typeS)	vertSrc = _skinningVertSrc(false) + vertSrc;
 			depthProgram = createProgram(vertSrc,_depthCubeFragSrc());
 			//debugTrace("setContext3DBuffers");
@@ -1271,6 +1161,116 @@
 		}//endfunction
 		
 		/**
+		* calculate tangents for normal mapping, quite heavy calculation
+		* input: [vx,vy,vz,nx,ny,nz,u,v,...]
+		* output: [vx,vy,vz,nx,ny,nz,tx,ty,tz,u,v,...]
+		*/
+		public static var TBRV:Vector.<Vector3D> = null;
+		public static function calcTangentBasis(idxs:Vector.<uint>,vData:Vector.<Number>) : Vector.<Number>
+		{
+			/*
+			let a be vector from p to q
+			let b be vector from p to r
+
+			p(ax,ay) + q(bx,by) s.t    (y axis)
+			p*ay + q*by = 1  ... (1)
+			p*ax + q*bx = 0  ... (2)
+
+			p*ax = -q*bx
+			p = -q*bx/ax   ... (2a)
+			sub in (1)
+
+			-q*ay*bx/ax + q*by = 1
+			q = 1/(by-ay*bx/ax)
+			*/
+			
+			var i:int=0;
+			var n:int=vData.length/8;
+			var v:Vector3D = null;
+			
+			if (TBRV==null)	TBRV=new Vector.<Vector3D>();
+			for (i=TBRV.length-1; i>=0; i--)	{v=TBRV[i]; v.x=0; v.y=0; v.z=0;}	// reset vector
+			for (i=TBRV.length; i<n; i++)	TBRV.push(new Vector3D(0,0,0));
+			
+			n = idxs.length;
+			for (i=0; i<n;)	// for each triangle
+			{
+				var i0:uint = idxs[i];	i++;	// tri point index 0
+				var i1:uint = idxs[i];	i++;	// tri point index 1 
+				var i2:uint = idxs[i];	i++;	// tri point index 2
+				
+				var pax:Number = vData[i1*8+6] - vData[i0*8+6];
+				var ax:Number = pax;			
+				do {
+					var tmp:uint=i0; i0=i1; i1=i2; i2=tmp;	
+					ax = vData[i1*8+6] - vData[i0*8+6];
+				} while (ax*ax>pax*pax);
+				tmp=i2; i2=i1; i1=i0; i0=tmp;
+				
+				var p0:uint = i0*8+6;
+				var p1:uint = i1*8+6;
+				var p2:uint = i2*8+6;
+				var tx:Number = vData[p0++];
+				var ty:Number = vData[p0];
+					ax		  = vData[p1++] - tx;	// vector a in uv space
+				var	ay:Number = vData[p1] - ty;
+				var bx:Number = vData[p2++] - tx;	// vector b in uv space
+				var by:Number = vData[p2] - ty;
+				var q:Number = 1/(by-ay*bx/ax);
+				var p:Number = -q*bx/ax;
+				
+				// find tangent vector from p q
+				p0 = i0*8;
+				p1 = i1*8;
+				p2 = i2*8;
+				tx = vData[p0++];
+				ty = vData[p0++];
+				var tz:Number = vData[p0];
+				ax = vData[p1++] - tx;
+				ay = vData[p1++] - ty;
+				var az:Number = vData[p1] - tz;		// vector a in object space
+				p0 = i0*8;
+				bx = vData[p2++] - tx;
+				by = vData[p2++] - ty;
+				var bz:Number = vData[p2] - tz;		// vector b in object space
+				
+				tx = p*ax+q*bx;
+				ty = p*ay+q*by;
+				tz = p*az+q*bz;
+				v = TBRV[i0];		v.x+=tx; v.y+=ty; v.z+=tz; v.w++;
+				v = TBRV[i1];		v.x+=tx; v.y+=ty; v.z+=tz; v.w++;
+				v = TBRV[i2];		v.x+=tx; v.y+=ty; v.z+=tz; v.w++;
+			}//endfor
+			
+			// ----- get tangent results for each corresponding point
+			var R:Vector.<Number> = new Vector.<Number>();
+			n = vData.length/8;
+			for (i=0; i<n; i++)	
+			{
+				v = TBRV[i];
+				p0 = i*8+3;
+				ax = vData[p0++];
+				ay = vData[p0++];
+				az = vData[p0];
+				if (ax*ax+ay*ay+az*az>0)
+				{	// cross product to make sure 90 degrees
+					tx = v.y*az - v.z*ay;	// cross product tangent
+					ty = v.z*ax - v.x*az;
+					tz = v.x*ay - v.y*ax;
+					var tl:Number = 1/Math.sqrt(tx*tx+ty*ty+tz*tz);
+					tx*=tl; ty*=tl; tz*=tl;
+				}
+				p0 = i*8;
+				R.push(	vData[p0++],vData[p0++],vData[p0++],	// vx,vy,vz
+						vData[p0++],vData[p0++],vData[p0++],	// nx,ny,nz
+						tx,ty,tz,								// tx,ty,tz
+						vData[p0++],vData[p0++]);				// u,v
+			}//endfor
+			
+			return R;
+		}//endfunction
+		
+		/**
 		* convenience function to find the bounding box of AABB (local bounding box) of mesh m 
 		*/
 		private static function estimateMinMax(T:Matrix4x4,m:Mesh,findMax:Boolean=true) : Vector3D
@@ -1333,7 +1333,7 @@
 			}
 			
 			if (propagate && childMeshes!=null)
-				for (i=0; i<childMeshes.length; i++)
+				for (i=childMeshes.length-1; i>-1; i--)
 				{
 					childMeshes[i].centerToGeometry(propagate);
 					if (childMeshes[i].transform==null)	childMeshes[i].transform = new Matrix4x4();
@@ -1505,7 +1505,7 @@
 		/**
 		*
 		*/
-		public static function renderWithBloom(stage:Stage,M:Mesh) : void
+		public static function renderWithBloom(stage:Stage,M:Mesh,shadows:Boolean=false) : void
 		{
 			if (context3d==null)	{getContext(stage);	return;}
 			prevType = -1;
@@ -1513,7 +1513,7 @@
 			prevEnv=null;
 			prevNorm=null;
 			prevProg=null;
-			renderBranch(stage,M,false,"texture");
+			renderBranch(stage,M,shadows,"texture");
 			if (bloomFilterData==null) 
 				bloomFilterData = new BloomFilterData(context3d);
 			bloomFilterData.render(outTex);
@@ -1571,65 +1571,51 @@
 						context3d.setProgramConstantsFromVector("fragment", 2, Vector.<Number>([M.material.specStr,M.material.specHard+1,M.material.specHard, 0]));	// st,h1,h0,0
 						context3d.setProgramConstantsFromVector("fragment", 3, Vector.<Number>([M.material.fogR,M.material.fogG,M.material.fogB,M.material.fogFar]));	// 
 						
+						// ----- clear off prev used buffers
+						for (j=0; j<7; j++)	context3d.setVertexBufferAt(j, null);
+						
 						// ----- sets vertices info for this mesh to context3d ----------
 						if (M.dataType==_typeV)
 						{
-							context3d.setVertexBufferAt(0, M.vertexBuffer, 0, "float3");	// va0 to expect vertices
-							context3d.setVertexBufferAt(1, M.vertexBuffer, 3, "float3");	// va1 to expect normals
-							context3d.setVertexBufferAt(2, M.vertexBuffer, 6, "float3");	// va2 to expect tangents
-							context3d.setVertexBufferAt(3, M.vertexBuffer, 9, "float2");	// va3 to expect uvs
-							if (prevType!=_typeV)
+							context3d.setVertexBufferAt(0, M.vertexBuffer, 0, "float3");		// va0 to expect vertices
+							if (M.illuminable)
 							{
-								context3d.setVertexBufferAt(4, null);
-								context3d.setVertexBufferAt(5, null);
-								context3d.setVertexBufferAt(6, null);
+								context3d.setVertexBufferAt(1, M.vertexBuffer, 3, "float3");		// va1 to expect normals
+								if (M.hasNorm)
+									context3d.setVertexBufferAt(2, M.vertexBuffer, 6, "float3");		// va2 to expect tangents
 							}
+							context3d.setVertexBufferAt(3, M.vertexBuffer, 9, "float2");		// va3 to expect uvs
 						}
 						else if (M.dataType==_typeP)
 						{
-							context3d.setVertexBufferAt(0, M.vertexBuffer, 0, "float3");	// va0 to expect vertices
-							context3d.setVertexBufferAt(1, M.vertexBuffer, 3, "float3");	// va1 to expect UV and idx
-							if (prevType!=_typeP)
-							{
-								context3d.setVertexBufferAt(2, null)
-								context3d.setVertexBufferAt(3, null);
-								context3d.setVertexBufferAt(4, null);
-								context3d.setVertexBufferAt(5, null);
-								context3d.setVertexBufferAt(6, null);
-							}
+							context3d.setVertexBufferAt(0, M.vertexBuffer, 0, "float3");		// va0 to expect vertices
+							context3d.setVertexBufferAt(1, M.vertexBuffer, 3, "float3");		// va1 to expect UV and idx
 							context3d.setProgramConstantsFromVector("vertex", 5,M.jointsData);	// the joint transforms data
 						}
 						else if (M.dataType==_typeM)
 						{
-							context3d.setVertexBufferAt(0, M.vertexBuffer, 0, "float3");	// va0 to expect vertices
-							context3d.setVertexBufferAt(1, M.vertexBuffer, 3, "float3");	// va1 to expect normals
-							context3d.setVertexBufferAt(2, M.vertexBuffer, 6, "float3");	// va2 to expect tangents
-							context3d.setVertexBufferAt(3, M.vertexBuffer, 9, "float4");	// va3 to expect UV and idx
-							if (prevType!=_typeM)
+							context3d.setVertexBufferAt(0, M.vertexBuffer, 0, "float3");		// va0 to expect vertices
+							context3d.setVertexBufferAt(3, M.vertexBuffer, 9, "float4");		// va3 to expect UV and idx
+							if (M.illuminable)
 							{
-								context3d.setVertexBufferAt(4, null);
-								context3d.setVertexBufferAt(5, null);
-								context3d.setVertexBufferAt(6, null);
+								context3d.setVertexBufferAt(1, M.vertexBuffer, 3, "float3");	// va1 to expect normals
+								if (M.hasNorm)	
+									context3d.setVertexBufferAt(2, M.vertexBuffer, 6, "float3");// va2 to expect tangents
 							}
 							context3d.setProgramConstantsFromVector("vertex", 5,M.jointsData);	// the meshes orientation and positions data
 						}
 						else if (M.dataType==_typeS)
 						{
-							context3d.setVertexBufferAt(0, M.vertexBuffer, 0, "float2");	// va0 to expect texU texV
+							context3d.setVertexBufferAt(0, M.vertexBuffer, 0, "float2");		// va0 to expect texU texV
 							if (M.illuminable)
 							{
-								context3d.setVertexBufferAt(1, M.vertexBuffer, 2, "float4");// va1 to expect wnx,wny,wnx,transIdx
-								context3d.setVertexBufferAt(2, M.vertexBuffer, 6, "float4");// va2 to expect wtx,wty,wtx,transIdx
+								context3d.setVertexBufferAt(1, M.vertexBuffer, 2, "float4");	// va1 to expect wnx,wny,wnx,transIdx
+								context3d.setVertexBufferAt(2, M.vertexBuffer, 6, "float4");	// va2 to expect wtx,wty,wtx,transIdx
 							}
-							else
-							{
-								context3d.setVertexBufferAt(1, null);
-								context3d.setVertexBufferAt(2, null);
-							}
-							context3d.setVertexBufferAt(3, M.vertexBuffer, 10, "float4");	// va3 to expect weight vertex 1
-							context3d.setVertexBufferAt(4, M.vertexBuffer, 14,"float4");	// va4 to expect weight vertex 2
-							context3d.setVertexBufferAt(5, M.vertexBuffer, 18,"float4");	// va5 to expect weight vertex 3
-							context3d.setVertexBufferAt(6, M.vertexBuffer, 22,"float4");	// va6 to expect weight vertex 4
+							context3d.setVertexBufferAt(3, M.vertexBuffer, 10, "float4");		// va3 to expect weight vertex 1
+							context3d.setVertexBufferAt(4, M.vertexBuffer, 14,"float4");		// va4 to expect weight vertex 2
+							context3d.setVertexBufferAt(5, M.vertexBuffer, 18,"float4");		// va5 to expect weight vertex 3
+							context3d.setVertexBufferAt(6, M.vertexBuffer, 22,"float4");		// va6 to expect weight vertex 4
 							context3d.setProgramConstantsFromVector("vertex", 5,M.jointsData);	// the joint transforms data
 						}
 						prevType = M.dataType;
@@ -1752,45 +1738,30 @@
 							if (prevProg!=M.depthProgram) context3d.setProgram(M.depthProgram);	// this mesh program that will render to depth buffer
 							prevProg=M.depthProgram;
 							
+							// ----- clear off prev buffers --------------------------
+							for (var j:int=0; j<7; j++) context3d.setVertexBufferAt(j,null);
+							
 							// ----- sets vertices info for this mesh to context3d ----------
 							if (M.dataType==_typeV)
 							{
 								context3d.setVertexBufferAt(0, M.vertexBuffer, 0, "float3");	// va0 to expect vertices
-								context3d.setVertexBufferAt(1, null);
-								context3d.setVertexBufferAt(2, null);
-								context3d.setVertexBufferAt(3, null);
-								context3d.setVertexBufferAt(4, null);
-								context3d.setVertexBufferAt(5, null);
-								context3d.setVertexBufferAt(6, null);
 							}
 							else if (M.dataType==_typeP)
 							{
 								context3d.setVertexBufferAt(0, M.vertexBuffer, 0, "float3");	// va0 to expect vertices
 								context3d.setVertexBufferAt(1, M.vertexBuffer, 3, "float3");	// va1 to expect UV and idx
-								context3d.setVertexBufferAt(2, null)
-								context3d.setVertexBufferAt(3, null);
-								context3d.setVertexBufferAt(4, null);
-								context3d.setVertexBufferAt(5, null);
-								context3d.setVertexBufferAt(6, null);
 								context3d.setProgramConstantsFromVector("vertex", 5,M.jointsData);	// the joint transforms data
 							}
 							else if (M.dataType==_typeM)
 							{
 								context3d.setVertexBufferAt(0, M.vertexBuffer, 0, "float3");	// va0 to expect vertices
-								context3d.setVertexBufferAt(1, null);
-								context3d.setVertexBufferAt(2, null);
 								context3d.setVertexBufferAt(3, M.vertexBuffer, 9, "float4")		// va3 to expect UV and idx, idx+1
-								context3d.setVertexBufferAt(4, null);
-								context3d.setVertexBufferAt(5, null);
-								context3d.setVertexBufferAt(6, null);
 								context3d.setProgramConstantsFromVector("vertex", 5,M.jointsData);	// the joint transforms data
 							}
 							else if (M.dataType==_typeS)
 							{
 								context3d.setVertexBufferAt(0, M.vertexBuffer, 0, "float2");	// va0 to expect texU texV
-								context3d.setVertexBufferAt(1, null);							// no need for normal,transIdx
-								context3d.setVertexBufferAt(2, null);
-								context3d.setVertexBufferAt(3, M.vertexBuffer, 10, "float4");	// va2 to expect weight vertex,transIdx
+								context3d.setVertexBufferAt(3, M.vertexBuffer, 10,"float4");	// va2 to expect weight vertex,transIdx
 								context3d.setVertexBufferAt(4, M.vertexBuffer, 14,"float4");	// va3 to expect weight vertex,transIdx
 								context3d.setVertexBufferAt(5, M.vertexBuffer, 18,"float4");	// va4 to expect weight vertex,transIdx
 								context3d.setVertexBufferAt(6, M.vertexBuffer, 22,"float4");	// va5 to expect weight vertex,transIdx
@@ -2918,20 +2889,34 @@
 			
 			ba.endian = "littleEndian";
 			ba.position = 0;
-			
+			/*
+			import flash.system.ApplicationDomain;
+			import avm2.intrinsics.memory.li16;
+			import avm2.intrinsics.memory.li32;
+			import avm2.intrinsics.memory.lf32;
+			var inMem:Boolean = false;
+			if (ba.length >= ApplicationDomain.MIN_DOMAIN_MEMORY_LENGTH)
+			{
+				ApplicationDomain.currentDomain.domainMemory = ba;
+				inMem = true;
+			}
+			*/
+			var addr:int = 0;
 			do {
 				var type:int = ba.readInt();
+				//var type:int = li32(addr); addr+=4;
 				var i:int=0;
 				
 				var vl:int = ba.readInt();	// verticesData length
-				var vPosn:int = ba.position;
+				//var vl:int = li32(addr); addr+=4;	// verticesData length
 				var verticesData:Vector.<Number> = new Vector.<Number>();
 				for (i=0; i<vl; i++)	verticesData.push(ba.readFloat());
-				
+				//for (i=0; i<vl; i++)	{var fval:Number=lf32(addr); addr+=4; verticesData.push(fval);}
 				var il:int = ba.readInt();	// indicesData length
-				var iPosn:int = ba.position;
+				//var il:int = li32(addr); addr+=4;	// indicesData length
 				var indicesData:Vector.<uint> = new Vector.<uint>();
 				for (i=0; i<il; i++)	indicesData.push(ba.readShort());
+				//for (i=0; i<il; i++)	{var ival:int=li16(addr); addr+=2; indicesData.push(ival);}
 				
 				var m:Mesh = new Mesh();
 				if (verticesData.length>0 && indicesData.length>0)
@@ -2941,19 +2926,6 @@
 					m.dataType = type;
 					m.trisCnt = il/3;	// number of tris to render
 					m.collisionGeom = new CollisionGeometry(verticesData,indicesData);
-					/*
-					if (context3d!=null && type==_typeV)
-					{	// upload to buffers directly from 
-						var oldPosn:int = ba.position;
-						// ----- set context vertices data ----------------------------------------
-						m.vertexBuffer=context3d.createVertexBuffer(vl/8, 8);	// vertex vx,vy,vz, nx,ny,nz, u,v
-						m.vertexBuffer.uploadFromByteArray(ba,vPosn,0,vl/8);
-						// ----- set context indices data -----------------------------------------
-						m.indexBuffer=context3d.createIndexBuffer(il);
-						m.indexBuffer.uploadFromByteArray(ba,iPosn,0,il);
-						//if (Mesh.debugTf!=null)	Mesh.debugTf.appendText("Upload from ByteArray verts:"+vl/8+" idxs:"+il+" vPosn:"+vPosn+" iPosn:"+iPosn+" oPosn:"+oldPosn+"\n");
-						ba.position = oldPosn;
-					}*/
 				}
 				
 				if (pstk.length>0)			// add this mesh to parent
@@ -2963,6 +2935,7 @@
 				}
 				
 				var n:int = ba.readInt();	// number of child meshes
+				//var n:int = li32(addr);	addr+=4; // number of child meshes
 				if (n>0)			// if have children
 				{
 					pstk.push(m);	// set this as parent
@@ -2974,9 +2947,8 @@
 						cstk.pop();
 						m=pstk.pop();
 					}
+			} while (pstk.length > 0);
 				
-			} while(pstk.length>0);
-			
 			return m;
 		}//endfunction
 		
@@ -3080,9 +3052,14 @@
 		* input : 		va0 = vertex	va1 = normal	va2 = tangent	va3 = texU,texV
 		* outputs:		vt0 = vertex	vt1 = normal  	vt2 = texU,texV vt3 = tangent
 		*/
-		private static function _stdReadVertSrc() : String
+		private static function _stdReadVertSrc(hasLights:Boolean=true,hasNorm:Boolean=false) : String
 		{
-			var s:String = "mov vt0, va0\n"+"mov vt1, va1\n"+"mov vt2, va3\n"+"mov vt3, va2\n";
+			var s:String = "mov vt0, va0\n" + "mov vt2, va3\n";
+			if (hasLights) 
+			{
+				s += "mov vt1, va1\n";
+				if (hasNorm) s += "mov vt3, va2\n";
+			}
 			return s;
 		}//endfunction
 		
@@ -3158,7 +3135,7 @@
 		*				vc[i+1] = tx,ty,tz,0	// translation
 		* outputs:		vt0 = vertex	vt1 = normal  	vt2 = texU,texV		vt3 = tangent
 		*/
-		private static function _meshesVertSrc(hasLights:Boolean=true) : String
+		private static function _meshesVertSrc(hasLights:Boolean=true,hasNorm:Boolean=false) : String
 		{
 			var s:String =
 			"mov vt0.xyzw, vc4.xyzw\n"+				// vt0 = 0,0,0,1
@@ -3177,18 +3154,22 @@
 						
 			// ----- orientate normal
 			if (hasLights)
-			s+=
-			"mov vt3, vt7\n"+						// vt3 = qx,qy,qz,a quaternion
-			"mov vt4, va1\n"+						// vt4.xyz = nx,ny,nz	normal to rotate
-			_quatRotVertSrc()+						// vt4.xyz=rotated nx,ny,nz
-			"mov vt1, vt4\n"+						// vt1 = nnx,nny,nnz rotated normal
-			"mov vt1.w, vc4.x\n"+					// vt1 = nnx,nny,nnz,0 rotated normal
-			"mov vt3, vt7\n"+						// vt3 = qx,qy,qz,a quaternion
-			"mov vt4, va2\n"+						// vt4.xyz = tx,ty,tz	tangent to rotate
-			"mov vt4.w, vc4.x\n"+					// 
-			_quatRotVertSrc()+						// vt4.xyz = rotated tx,ty,tz
-			"mov vt3, vt4\n"+						// vt3.xyz = rotated tx,ty,tz
-			"mov vt3.w, vc4.x\n";					// vt3 = nnx,nny,nnz,0 rotated normal
+			{
+				s+=
+				"mov vt3, vt7\n"+					// vt3 = qx,qy,qz,a quaternion
+				"mov vt4, va1\n"+					// vt4.xyz = nx,ny,nz	normal to rotate
+				_quatRotVertSrc()+					// vt4.xyz=rotated nx,ny,nz
+				"mov vt1, vt4\n"+					// vt1 = nnx,nny,nnz rotated normal
+				"mov vt1.w, vc4.x\n";				// vt1 = nnx,nny,nnz,0 rotated normal
+				if (hasNorm)
+				s+=
+				"mov vt3, vt7\n"+					// vt3 = qx,qy,qz,a quaternion
+				"mov vt4, va2\n"+					// vt4.xyz = tx,ty,tz	tangent to rotate
+				"mov vt4.w, vc4.x\n"+				// 
+				_quatRotVertSrc()+					// vt4.xyz = rotated tx,ty,tz
+				"mov vt3, vt4\n"+					// vt3.xyz = rotated tx,ty,tz
+				"mov vt3.w, vc4.x\n";				// vt3 = nnx,nny,nnz,0 rotated normal
+			}
 			return s;
 		}//endfunction
 		
@@ -3308,7 +3289,7 @@
 		*				v3= untransformed vertex
 		*				v4= transformed tangent
 		*/
-		private static function _stdPersVertSrc(hasLights:Boolean=true,hasFog:Boolean=true) : String
+		private static function _stdPersVertSrc(hasLights:Boolean=true,hasFog:Boolean=true,hasNorm:Boolean=false) : String
 		{
 			var s:String = 
 			"mov v3, vt0\n"+					// 
@@ -3328,14 +3309,17 @@
 			"mov v2, vt2\n";					// move UV to fragment shader v2
 			
 			if (hasLights)
+			{
 			s+=	"mov vt1.w, vc4.x\n" +			// vt1 = nx,ny,nz,0
 				"m33 vt1.xyz, vt1.xyz, vc1\n" +	// vt1=transformed normal
 				"nrm vt1.xyz, vt1.xyz\n" + 		// vt1=normalized normals
-				"mov v1, vt1\n" +				// move normal to fragment shader v1
-				"mov vt3.w, vc4.x\n" +			// vt3 = nx,ny,nz,0
+				"mov v1, vt1\n";				// move normal to fragment shader v1
+			if (hasNorm)
+			s+=	"mov vt3.w, vc4.x\n" +			// vt3 = nx,ny,nz,0
 				"m33 vt3.xyz, vt3.xyz, vc1\n" +	// vt3=transformed tangent
 				"nrm vt3.xyz, vt3.xyz\n" + 		// vt3=normalized tangent
 				"mov v4, vt3\n";				// move tangent to fragment shader v4
+			}
 			return s;
 		}//endfunction
 		
