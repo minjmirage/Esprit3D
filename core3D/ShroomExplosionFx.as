@@ -87,7 +87,7 @@ package core3D
 				var innerSkin:Mesh = new Mesh();
 				innerSkin.castsShadow=false;
 				innerSkin.enableLighting(false);
-				innerSkin.setAmbient(1,1,1,0);
+				innerSkin.setAmbient(1,1,1);
 				innerSkin.setParticles(V,I);
 				//innerSkin.depthWrite = true;		// write to depth buffer
 				innerSkin.setTexture(Bmds[j]);
@@ -147,7 +147,7 @@ package core3D
 				}//endfor
 				stepCnt++;
 				var af:Number = (120-stepCnt)/120+0.01;
-				Skins[0].setAmbient(1+af,1+af,1,0);
+				Skins[0].setAmbient(1+af,1+af,1);
 				if (stepCnt==120)	step = null;
 			}
 			
