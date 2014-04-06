@@ -378,14 +378,13 @@
 		*/
 		public function enableLighting(enable:Boolean,propagate:Boolean=false) : void
 		{
-			var liFn:Function = function(M:Mesh,pM:Mesh):Boolean
-			{
-				M.illuminable=enable;
-				M.stdProgram=null;
-				M.shadowProgram=null;
-				return propagate;
-			}
-			treeTransverse(this,liFn);
+			illuminable=enable;
+			stdProgram=null;
+			shadowProgram=null;
+			
+			if (propagate)
+			for (var i:int=childMeshes.length-1; i>-1; i--)
+				childMeshes[i].enableLighting(enable,propagate);
 		}//endfunction
 		
 		/**
@@ -464,7 +463,7 @@
 			}
 			
 			// ----- do for submeshes too if required
-			if (childMeshes!=null && propagate)
+			if (propagate)
 			for (i=0; i<childMeshes.length; i++)
 				childMeshes[i].compressGeometry(propagate);
 		}//endfunction
@@ -688,21 +687,20 @@
 		*/
 		public function setTexture(bmd:BitmapData,propagate:Boolean=false,update:Boolean=false) : void
 		{
-			var texFn:Function = function(M:Mesh,pM:Mesh):Boolean
+			if ((texture==null && bmd!=null) || (texture!=null && bmd==null))
 			{
-				if ((M.texture==null && bmd!=null) || (M.texture!=null && bmd==null))
-				{
-					M.stdProgram=null;
-					M.shadowProgram=null;
-				}
-				M.texture = powOf2Size(bmd);
-				M.textureBuffer = uploadTextureBuffer(M.texture,update,true);
-				if (M.blendSrc=="sourceAlpha" && M.blendDest=="one") {}
-				else if (M.texture!=null && M.texture.transparent)	M.setBlendMode("alpha");
-				else												M.setBlendMode("normal");
-				return propagate;
+				stdProgram=null;
+				shadowProgram=null;
 			}
-			treeTransverse(this,texFn);
+			texture = powOf2Size(bmd);
+			textureBuffer = uploadTextureBuffer(texture,update,true);
+			if (blendSrc=="sourceAlpha" && blendDest=="one") {}
+			else if (texture!=null && texture.transparent)	setBlendMode("alpha");
+			else											setBlendMode("normal");
+			
+			if (propagate)
+			for (var i:int=childMeshes.length-1; i>-1; i--)
+				childMeshes[i].setTexture(bmd,propagate,update);
 		}//endfunction
 		
 		/**
@@ -764,21 +762,19 @@
 					combined.copyChannel(specBmd,rect,pt,BitmapDataChannel.RED,BitmapDataChannel.ALPHA);
 			}
 			
-			var nsFn:Function = function(M:Mesh,pM:Mesh):Boolean
+			hasNorm = normBmd!=null;
+			hasSpec = specBmd!=null;
+			if ((normMap==null && combined!=null) || (normMap!=null && combined==null))
 			{
-				M.hasNorm = normBmd!=null;
-				M.hasSpec = specBmd!=null;
-				if ((M.normMap==null && combined!=null) || (M.normMap!=null && combined==null))
-				{
-					M.stdProgram=null;
-					M.shadowProgram=null;
-				}	
-				M.normMap = combined;
-				M.normMapBuffer = uploadTextureBuffer(M.normMap,false,true);
-				return propagate;
-			}
-			treeTransverse(this,nsFn);
+				stdProgram=null;
+				shadowProgram=null;
+			}	
+			normMap = combined;
+			normMapBuffer = uploadTextureBuffer(normMap,false,true);
 			
+			if (propagate)
+			for (var i:int=childMeshes.length-1; i>-1; i--)
+				childMeshes[i].setNormalAndSpecularMap(normBmd,specBmd,propagate);
 			return combined;
 		}//endfunction
 		
@@ -802,37 +798,34 @@
 		*/
 		public function setEnvMap(eM:CubeTexture,propagate:Boolean=false) : void
 		{
-			var envFn:Function = function(M:Mesh,pM:Mesh):Boolean
+			if (envMapBuffer==null)
 			{
-				if (M.envMapBuffer==null)
-				{
-					M.stdProgram=null;
-					M.shadowProgram=null;
-					//M.setContext3DBuffers();
-				}
-				M.envMapBuffer = eM;
-				return propagate;
+				stdProgram=null;
+				shadowProgram=null;
+				//setContext3DBuffers();
 			}
-			treeTransverse(this,envFn);
+			envMapBuffer = eM;
+			
+			for (var i:int=childMeshes.length-1; i>-1; i--)
+				childMeshes[i].setEnvMap(eM,propagate);
 		}//endfunction
 		
 		/**
 		* clears off environment map for this mesh...
 		*/
-		public function clearEnvMap() : void
+		public function clearEnvMap(propagate:Boolean=false) : void
 		{
-			var envFn:Function = function(M:Mesh,pM:Mesh):Boolean
+			if (envMapBuffer!=null)
 			{
-				if (M.envMapBuffer!=null)
-				{
-					M.stdProgram=null;
-					M.shadowProgram=null;
-					 //M.setContext3DBuffers();
-				}
-				M.envMapBuffer = null;
-				return true;
+				stdProgram=null;
+				shadowProgram=null;
+				 //setContext3DBuffers();
 			}
-			treeTransverse(this,envFn);
+			envMapBuffer = null;
+			
+			if (propagate)
+			for (var i:int=childMeshes.length-1; i>-1; i--)
+				childMeshes[i].clearEnvMap(propagate);
 		}//endfunction
 				
 		/**
@@ -887,20 +880,19 @@
 		*/
 		public function setAmbient(red:Number=0.5,green:Number=0.5,blue:Number=0.5,propagate:Boolean=false) : void
 		{
-			var amFn:Function = function(M:Mesh,pM:Mesh):Boolean
-			{
-				if ((M.material.ambR==1 && M.material.ambG==1 && M.material.ambB==1) ||
-					(red==1 && green==1 && blue==1))
-				{	
-					M.stdProgram=null;
-					M.shadowProgram=null;
-				}
-				M.material.ambR = red;
-				M.material.ambG = green;
-				M.material.ambB = blue;
-				return propagate;
+			if ((material.ambR==1 && material.ambG==1 && material.ambB==1) ||
+				(red==1 && green==1 && blue==1))
+			{	
+				stdProgram=null;
+				shadowProgram=null;
 			}
-			treeTransverse(this,amFn);
+			material.ambR = red;
+			material.ambG = green;
+			material.ambB = blue;
+			
+			if (propagate)
+			for (var i:int=childMeshes.length-1; i>-1; i--)
+				childMeshes[i].setAmbient(red,green,blue,propagate);
 		}//endfunction
 		
 		/**
@@ -908,19 +900,17 @@
 		 */
 		public function setSpecular(strength:Number=0.5,hardness:uint=5,propagate:Boolean=false) : void
 		{
-			var spFn:Function = function(M:Mesh,pM:Mesh):Boolean
-			{
-				if ((M.material.specStr==0) ||
-					strength==0)
-				{	
-					M.stdProgram=null;
-					M.shadowProgram=null;
-				}
-				M.material.specStr = strength;
-				M.material.specHard = hardness;
-				return propagate;
+			if ((material.specStr==0) || strength==0)
+			{	
+				stdProgram=null;
+				shadowProgram=null;
 			}
-			treeTransverse(this,spFn);
+			material.specStr = strength;
+			material.specHard = hardness;
+			
+			if (propagate)
+			for (var i:int=childMeshes.length-1; i>-1; i--)
+				childMeshes[i].setSpecular(strength,hardness,propagate);
 		}//endfunction
 		
 		/**
@@ -928,20 +918,19 @@
 		*/
 		public function setFog(red:Number=0.5,green:Number=0.5,blue:Number=0.5,fogDist:Number=0,propagate:Boolean=false) : void
 		{
-			var fgFn:Function = function(M:Mesh,pM:Mesh):Boolean
+			if (fogDist!=material.fogFar)
 			{
-				if (fogDist!=M.material.fogFar)
-				{
-					M.stdProgram=null;
-					M.shadowProgram=null;
-				}
-				M.material.fogR = red;
-				M.material.fogG = green;
-				M.material.fogB = blue;
-				M.material.fogFar = fogDist;
-				return propagate;
+				stdProgram=null;
+				shadowProgram=null;
 			}
-			treeTransverse(this,fgFn);
+			material.fogR = red;
+			material.fogG = green;
+			material.fogB = blue;
+			material.fogFar = fogDist;
+			
+			if (propagate)	
+			for (var i:int=childMeshes.length-1; i>-1; i--)
+				childMeshes[i].setFog(red,green,blue,fogDist,propagate);			
 		}//endfunction
 		
 		/**
@@ -949,15 +938,14 @@
 		*/
 		public function setBlendMode(s:String,propagate:Boolean=false) : void
 		{
-			var bmFn:Function = function(M:Mesh,pM:Mesh):Boolean
-			{
-				s = s.toLowerCase();
-				if (s=="add")		{blendSrc="sourceAlpha"; blendDest="one";}
-				if (s=="alpha")		{blendSrc="sourceAlpha"; blendDest="oneMinusSourceAlpha";}
-				if (s=="normal")	{blendSrc="one"; blendDest="zero";}
-				return propagate;
-			}
-			treeTransverse(this,bmFn);
+			s = s.toLowerCase();
+			if (s=="add")		{blendSrc="sourceAlpha"; blendDest="one";}
+			if (s=="alpha")		{blendSrc="sourceAlpha"; blendDest="oneMinusSourceAlpha";}
+			if (s=="normal")	{blendSrc="one"; blendDest="zero";}
+			
+			if (propagate)
+			for (var i:int=childMeshes.length-1; i>-1; i--)
+				childMeshes[i].setBlendMode(s,propagate);
 		}//endfunction
 		
 		/**
@@ -1332,7 +1320,7 @@
 				transform = transform.translate(mean.x,mean.y,mean.z);
 			}
 			
-			if (propagate && childMeshes!=null)
+			if (propagate)
 				for (i=childMeshes.length-1; i>-1; i--)
 				{
 					childMeshes[i].centerToGeometry(propagate);
@@ -2871,11 +2859,10 @@
 			for (i=0; i<n; i++)	ba.writeShort(idxsData[i]);
 			
 			// ----- write child meshes data 
-			n=0; if (childMeshes!=null) n=childMeshes.length;
+			n=childMeshes.length;
 			ba.writeInt(n)
-			if (childMeshes!=null)
-				for (i=0; i<n; i++)	
-					childMeshes[i].toByteArray(ba);
+			for (i=0; i<n; i++)	
+				childMeshes[i].toByteArray(ba);
 			return ba;
 		}//endfunction
 		
@@ -2995,23 +2982,7 @@
 			else
 				return bmd;
 		}//endfunction
-		
-		/**
-		* convenience function, goes through the given mesh tree applying fn to each node
-		*/
-		private static function treeTransverse(M:Mesh,applyFn:Function,pM:Mesh=null) : Boolean
-		{
-			var cont:Boolean = applyFn(M,pM);
-			if (cont==false) return false;
-			if (M.childMeshes!=null)
-			for (var i:int=0; i<M.childMeshes.length; i++)
-			{
-				cont=treeTransverse(M.childMeshes[i],applyFn,M);
-				if (cont==false) return false;
-			}
-			return true;
-		}//endfunction
-		
+				
 		/**
 		* creates a fps counter readout textfield that finds average of time taken in n frames 
 		*/
