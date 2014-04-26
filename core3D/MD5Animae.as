@@ -598,7 +598,7 @@
 			{
 				var mT:Vector.<uint> = MeshesData[m+0];
 				var mV:Vector.<Number> = MeshesData[m+1];
-				var mW:Vector.<VertexData> = MeshesData[m+2];
+				var mW:Vector.<VertexData> = MeshesData[m+2]; 
 			
 				// ----- create working data vector if not exist
 				if (_V==null) _V = new Vector.<VertexData>();	// vertex results vector
@@ -615,6 +615,9 @@
 					var nx:Number = 0;				// normal value to accumulate
 					var ny:Number = 0;
 					var nz:Number = 0;
+					var tx:Number = 0;				// tangent value to accumulate
+					var ty:Number = 0;
+					var tz:Number = 0;
 					for (var w:uint=widx; w<widxend; w++)
 					{
 						var wD:VertexData = mW[w];	// weight data 
@@ -624,8 +627,10 @@
 						var wpz:Number = wD.vz;		// weight posn
 						var wnx:Number = wD.nx;
 						var wny:Number = wD.ny;
-						var wnz:Number = wD.nz;
-						var jT:Matrix4x4 = JTs[wD.idx];	//joint transform
+						var wtz:Number = wD.tz;
+						var wtx:Number = wD.tx;
+						var wty:Number = wD.ty;
+						var wnz:Number = wD.nz;var jT:Matrix4x4 = JTs[wD.idx];	//joint transform
 						
 						vx+= weight*(jT.aa*wpx + jT.ab*wpy + jT.ac*wpz + jT.ad);
 						vy+= weight*(jT.ba*wpx + jT.bb*wpy + jT.bc*wpz + jT.bd);
@@ -636,27 +641,35 @@
 							ny = jT.ba*wnx + jT.bb*wny + jT.bc*wnz;
 							nz = jT.ca*wnx + jT.cb*wny + jT.cc*wnz;
 						}
+						if (tx==0 && ty==0 && tz==0)
+						{
+							tx = jT.aa*wtx + jT.ab*wty + jT.ac*wtz;
+							ty = jT.ba*wtx + jT.bb*wty + jT.bc*wtz;
+							tz = jT.ca*wtx + jT.cb*wty + jT.cc*wtz;
+						}
 					}
 					
 					// ----- store calculated vertex position
 					var vd:VertexData = _V[v/4];
 					vd.vx=vx; vd.vy=vy; vd.vz=vz; 	// set position data
 					vd.nx=nx; vd.ny=ny; vd.nz=nz;	// set normal data
+					vd.tx=tx; vd.ty=ty; vd.tz=tz;	// set tangent data
 					vd.u=mV[v+0]; vd.v=mV[v+1];		// set UV data
 				}//endfor each vertex
 								
 				if (debugTf!=null) debugTf.appendText("Tris="+mT.length/3+"  Vertices="+mV.length/4+"  Weights="+mW.length);
 				
-				// ----- write out data in [vx,vy,vz,nx,ny,nz,u,v, ....] format in original vertices order
+				// ----- write out data in [vx,vy,vz,nx,ny,nz,tx,ty,tz,u,v, ....] format in original vertices order
 				var V:Vector.<Number> = M[m/3].vertData;	// reusing mesh vector...	
 				if (V==null)	V = new Vector.<Number>();
-				while (V.length>_V.length*8)	V.pop();
+				while (V.length>_V.length*11)	V.pop();
 				for (v=0; v<_V.length; v++)			// for each vertex in triangle
 				{
 					var vt:VertexData = _V[v];
-					var idx:int = v*8;
+					var idx:int = v*11;
 					V[idx++]=vt.vx;	V[idx++]=vt.vy;	V[idx++]=vt.vz;
 					V[idx++]=vt.nx;	V[idx++]=vt.ny;	V[idx++]=vt.nz;
+					V[idx++]=vt.tx;	V[idx++]=vt.ty;	V[idx++]=vt.tz;
 					V[idx++]=vt.u;	V[idx++]=vt.v;
 				}//endfor each triangle
 				
@@ -736,6 +749,7 @@
 				}
 			}//endfor
 			
+			boneTrace.transform = skin.transform;
 			return boneTrace;
 		}//endfunction
 				
@@ -929,7 +943,7 @@
 				var frameData:Vector.<VertexData> = Frames[frame];
 				
 				// ----- if animation 2 is named, interpolate between animations 1 and 2
-				if (animId2!=null && Animations.indexOf(animId2)!=-1)
+				if (animId2!=null && Animations.indexOf(animId2)!=-1 && inter>0)
 				{
 					Frames = Animations[Animations.indexOf(animId2)+2];
 					frame2 = frame2%Frames.length;

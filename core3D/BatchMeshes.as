@@ -70,7 +70,7 @@ package core3D
 			for (i=0; i<60; i++)	// try to put 60 meshes inside
 			{
 				m = M[i%totalVariety];
-				var oV:Vector.<Number> = Mesh.calcTangentBasis(m.idxsData,m.vertData);	// vertices, normals and UV data [vx,vy,vz,nx,ny,nz,tx,ty,tz,u,v, ...] can be null
+				var oV:Vector.<Number> = m.vertData;	// vertices, normals and UV data [vx,vy,vz,nx,ny,nz,tx,ty,tz,u,v, ...] can be null
 				var oI:Vector.<uint> = m.idxsData;		// indices to vertices forming triangles [a1,a2,a3, b1,b2,b3, ...]		
 		
 				if (V.length/13+oV.length/11<65535)		// if still can fit more

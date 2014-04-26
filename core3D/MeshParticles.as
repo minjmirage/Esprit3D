@@ -44,7 +44,7 @@ package core3D
 				}
 				if (compress) m.compressGeometry();		// reuse vertices data whenever possible
 			
-				var oV:Vector.<Number> = Mesh.calcTangentBasis(m.idxsData,m.vertData);	// vertices, normals and UV data [vx,vy,vz,nx,ny,nz,tx,ty,tz,u,v, ...] can be null
+				var oV:Vector.<Number> = m.vertData;	// vertices, normals and UV data [vx,vy,vz,nx,ny,nz,tx,ty,tz,u,v, ...] can be null
 				var oI:Vector.<uint> = m.idxsData;		// indices to vertices forming triangles [a1,a2,a3, b1,b2,b3, ...]		
 						
 				// ----- set as 0 drawn by default
