@@ -1301,6 +1301,8 @@
 			var d:Number = 0;
 			var a:Number = 0;
 			
+			var wDist:Number = 0.05/skin.transform.determinant3();
+			
 			//var mkrCnt:int=0;
 			for (var i:int=0; i<JtM.length; i++)
 				if (JtM[i]!=null)
@@ -1313,7 +1315,7 @@
 					a = 1-b*b-c*c-d*d;
 					if (a<0) {a=Math.sqrt(b*b+c*c+d*d); b/=a; c/=a; d/=a; a=0;}	
 					a =-Math.sqrt(a);
-					var pt:Vector3D = new Vector3D(0,0.05,0);
+					var pt:Vector3D = new Vector3D(0,wDist,0);
 					pt = posnToObjectSpace(pt,i,frameData);	// targ pt in object space!
 					
 					if (isNaN(m.nx) || isNaN(m.ny) || isNaN(m.nz))
@@ -1338,7 +1340,7 @@
 						m.nz+=m.vz;
 						
 						var wPt:Vector3D = new Vector3D(pt.x-dx,pt.y-dy,pt.z-dz);	// weight point in object space
-						pt = quatMult(b,c,d,a, 0,0.05,0,0);	
+						pt = quatMult(b,c,d,a, 0,wDist,0,0);	
 						pt = quatMult(pt.x,pt.y,pt.z,pt.w, -b,-c,-d,a);				
 						pt.x += jt.vx; pt.y+=jt.vy; pt.z+=jt.vz;					// targ pt in parent space of joint
 						wPt = posnToJointSpace(wPt,BindPoseData[i*3+1],frameData);	// weight pt in parent space of joint
@@ -1346,7 +1348,7 @@
 						dy = wPt.y-jt.vy;
 						dz = wPt.z-jt.vz;
 						var dl:Number = Math.sqrt(dx*dx+dy*dy+dz*dz);
-						wPt = new Vector3D(jt.vx+dx/dl*0.05,jt.vy+dy/dl*0.05,jt.vz+dz/dl*0.05); 
+						wPt = new Vector3D(jt.vx+dx/dl*wDist,jt.vy+dy/dl*wDist,jt.vz+dz/dl*wDist); 
 						pt.normalize();
 						wPt.normalize();
 						var ang:Number = Math.acos(Math.max(-1,Math.min(1,wPt.x*pt.x+wPt.y*pt.y+wPt.z*pt.z)));

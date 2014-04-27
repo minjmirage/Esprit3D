@@ -19,7 +19,7 @@ package core3D
 		/**
 		* creates a 60 batch rendered meshes group arranged 0,1,2,...n,0,1,2,...n,
 		*/
-		public function BatchMeshes(M:Vector.<Mesh>,compress:Boolean=true) : void
+		public function BatchMeshes(M:Vector.<Mesh>) : void
 		{
 			if (M==null || M.length==0)
 			{
@@ -57,7 +57,6 @@ package core3D
 					Mesh.debugTrace("BatchMeshes Error! empty mesh given!");
 					m = Mesh.createTetra();
 				}
-				if (compress) m.compressGeometry();		// reuse vertices data whenever possible
 				M[j] = m;
 				triCnts[j] = m.idxsData.length/3;
 			}//endfor
