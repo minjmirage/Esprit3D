@@ -120,7 +120,7 @@
 			transform = new Matrix4x4();
 			material = new Material();
 			setAmbient(0.3, 0.3, 0.3);			// R,G,B
-			setSpecular(0.2,5);					// strength,hardness
+			setSpecular(0,5);					// strength,hardness
 			setFog();
 		}//endconstructor
 
@@ -1799,7 +1799,7 @@
 				gettingContext=false;
 				var stage3d:Stage3D=Stage3D(ev.currentTarget);
 				context3d=stage3d.context3D;
-				context3d.enableErrorChecking=true;	//**********************************
+				context3d.enableErrorChecking=false;	//**********************************
 				debugTrace("got context3d, driverInfo:"+context3d.driverInfo);
 				configBackBufferAndCallBack();
 			}//endfunction
@@ -3323,9 +3323,8 @@
 				"mul ft3.xyz, ft3.xyz, ft7.yyy\n"+			// ft3=y*co tangent
 				"mul ft1.xyz, ft1.xyz, ft7.zzz\n"+			// ft1=z*normal
 				"add ft1.xyz, ft1.xyz, ft2.xyz\n"+
-				"add ft1.xyz, ft1.xyz, ft3.xyz\n"+			// ft1=perturbed normal
-				"nrm ft1.xyz, ft1.xyz\n";
-
+				"add ft1.xyz, ft1.xyz, ft3.xyz\n";			// ft1=perturbed normal
+			
 			// ----- for each light point, op codes to handle lighting mix ----
 			for (var i:int=0; i<numLights; i++)
 			{
