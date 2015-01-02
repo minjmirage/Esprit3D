@@ -85,8 +85,9 @@
 
 		private static var outTex:Texture;				// GLOBAL for post processing filters support
 
-		private static var viewWidth:uint = 0;			// current width of render viewport
-		private static var viewHeight:uint = 0; 		// current height of render viewport
+		private static var antiAliasing:uint = 4;		// render result antialiasing
+		private static var viewWidth:uint = 800;		// current width of render viewport
+		private static var viewHeight:uint = 600; 		// current height of render viewport
 		public static var context3d:Context3D;			// reference to the shared context3D for rendering onto stage3D
 
 		// ----- remembers previous assets used in render to skip resetting buffers
@@ -1103,6 +1104,27 @@
 		}//endfunction
 
 		/**
+		*
+		*/
+		public static function setAntiAliasing(val:uint):void
+		{
+			antiAliasing = val;
+			if (context3d==null) return;
+			
+			try {
+				context3d.configureBackBuffer(viewWidth, viewHeight, antiAliasing, true);
+				debugTrace("configure back buffer to, "+viewWidth+"x"+viewHeight);
+			} catch (e:Error)
+			{
+				try {
+					context3d.configureBackBuffer(viewWidth, viewHeight, antiAliasing, false);
+					debugTrace("configure back buffer to, "+viewWidth+"x"+viewHeight+" depthAndStencil false");
+				}
+				catch (e:Error) {}
+			}
+		}//endfunction
+
+		/**
 		* calculate tangents for normal mapping, quite heavy calculation
 		* input: [vx,vy,vz,nx,ny,nz,u,v,...]
 		* output: [vx,vy,vz,nx,ny,nz,tx,ty,tz,u,v,...]
@@ -1809,12 +1831,12 @@
 				viewWidth = stage.stageWidth;
 				viewHeight = stage.stageHeight;
 				try {
-					context3d.configureBackBuffer(viewWidth, viewHeight, 4, true);
+					context3d.configureBackBuffer(viewWidth, viewHeight, antiAliasing, true);
 					debugTrace("configure back buffer to, "+viewWidth+"x"+viewHeight);
 				} catch (e:Error)
 				{
 					try {
-						context3d.configureBackBuffer(viewWidth, viewHeight, 4, false);
+						context3d.configureBackBuffer(viewWidth, viewHeight, antiAliasing, false);
 						debugTrace("configure back buffer to, "+viewWidth+"x"+viewHeight+" depthAndStencil false");
 					}
 					catch (e:Error)
@@ -3308,22 +3330,20 @@
 				s =	"tex ft0, v2, fs0 <2d,linear,"+mip+",repeat> \n"; 	// ft0=sample texture with UV use miplinear to enable mipmapping
 			else
 				s = "mov ft0, fc0.zzzz\n";				// ft0 = 1,1,1,1
-
-			s +=	"mov ft5, fc0.xxxx\n"+				// ft5= 0,0,0,0 diffuse lighting accu
-					"mov ft6, fc0.xxxx\n"+				// ft6= 0,0,0,0 specular highlights accu
-					"nrm ft1.xyz, v1.xyz\n";			// normalized vertex normal
-
+			
 			if (hasNorm)	// if has normal mapping
 			s +="tex ft7, v2, fs1 <2d,linear,"+mip+",repeat>\n" +	// ft7=sample normMap with UV
 				"mul ft7.xyz, ft7.xyz, fc0.www\n"+			// ft7.xyz *= 2
 				"sub ft7.xyz, ft7.xyz, fc0.zzz\n"+			// ft7.xyz = ft7.xyz*2-1
-				"nrm ft2.xyz, v4.xyz\n"+					// ft2=normalized tangent x
-				"crs ft3.xyz, ft1.xyz, ft2.xyz\n"+			// ft3=co tangent y
-				"mul ft2.xyz, ft2.xyz, ft7.xxx\n"+			// ft2=x*tangent
+				"crs ft3.xyz, v1.xyz, v4.xyz\n"+			// ft3=co tangent y
+				"mul ft2.xyz, v4.xyz, ft7.xxx\n"+			// ft2=x*tangent
 				"mul ft3.xyz, ft3.xyz, ft7.yyy\n"+			// ft3=y*co tangent
-				"mul ft1.xyz, ft1.xyz, ft7.zzz\n"+			// ft1=z*normal
+				"mul ft1.xyz, v1.xyz, ft7.zzz\n"+			// ft1=z*normal
 				"add ft1.xyz, ft1.xyz, ft2.xyz\n"+
-				"add ft1.xyz, ft1.xyz, ft3.xyz\n";			// ft1=perturbed normal
+				"add ft1.xyz, ft1.xyz, ft3.xyz\n"+			// ft1=perturbed normal
+				"nrm ft1.xyz, ft1.xyz\n";
+			else
+			s +="nrm ft1.xyz, v1.xyz\n";			// normalized vertex normal
 			
 			// ----- for each light point, op codes to handle lighting mix ----
 			for (var i:int=0; i<numLights; i++)
@@ -3358,8 +3378,12 @@
 					"mul ft3, ft3, ft4\n"+				// set diff to 0 if under shadows
 					"mul ft2, ft2, ft4\n";				// set spec to 0 if under shadows
 
-				s+= "max ft5, ft5, ft3 \n"+				// ft5=accumulated diffuse color
-					"add ft6, ft6, ft2 \n";				// ft6=accumulated specular highlight
+				if (i==0)
+					s +="mov ft5, ft3\n"+					// ft5=diffuse lighting accu
+						"mov ft6, ft2\n";					// ft6=specular highlights accu
+				else
+					s+= "max ft5, ft5, ft3 \n"+				// ft5=accumulated diffuse color
+						"add ft6, ft6, ft2 \n";				// ft6=accumulated specular highlight
 			}//endfor
 
 
