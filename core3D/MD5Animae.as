@@ -173,79 +173,211 @@
 		}//endfunction
 		
 		/**
-		* NOT TESTED!
+		* saves mesh, bones and animation data to bytearray .amf file
 		*/
-		public function saveAsAmf2(fileName:String="data") : void
+		public function saveAsAmf(fileName:String="data") : void
 		{
-			function w_mT(mT:Vector.<uint>):void
-			{
-				ba.writeShort(mT.length);
-				var n:int=mT.length;
-				for (var i:int=0; i<n; i++) ba.writeShort(mT[i]);
-			}
-			function w_mV(mV:Vector.<Number>):void
-			{
-				ba.writeShort(mV.length);
-				var n:int=mV.length;
-				for (var i:int=0; i<n; i+=4) 
-				{
-					ba.writeFloat(mV[i+0]);
-					ba.writeFloat(mV[i+1]);
-					ba.writeShort(mV[i+2]);
-					ba.writeShort(mV[i+3]);
-				}
-			}
-			function w_mW(mW:Vector.<VertexData>):void
-			{
-				ba.writeShort(mW.length);
-				var n:int=mW.length;
-				for (var i:int=0; i<n; i++) 
-				{
-					var vd:VertexData = mW[i];
-					ba.writeFloat(vd.vx);	// posn
-					ba.writeFloat(vd.vy);
-					ba.writeFloat(vd.vz);
-					ba.writeFloat(vd.nx);	// normal
-					ba.writeFloat(vd.ny);
-					ba.writeFloat(vd.nz);
-					ba.writeFloat(vd.w);	// weight
-					ba.writeShort(vd.idx);	// bone idx
-				}
-			}
-			
 			var ba:ByteArray = new ByteArray();
+			var i:int=0;
 			
-			if (md5Skins!=null) ba.writeShort(md5Skins.length-1);
-			else				ba.writeObject(0);
+			// ----- write bind pose data to bytearray ------------------------
+			ba.writeShort(BindPoseData.length/3);	// number of joints
+			for (i=0; i<BindPoseData.length; i+=3)
+			{
+				ba.writeObject(BindPoseData[i+0]);	// joint name string
+				ba.writeShort(BindPoseData[i+1]);	// parentIdx
+				var vd:VertexData = BindPoseData[i+2];
+				ba.writeFloat(vd.vx);				// posn x
+				ba.writeFloat(vd.vy);				// posn y
+				ba.writeFloat(vd.vz);				// posn z
+				ba.writeFloat(vd.nx);				// normal x
+				ba.writeFloat(vd.ny);				// normal y
+				ba.writeFloat(vd.nz);				// normal z
+			}
 			
-			ba.writeObject(BindPoseData);
-			ba.writeObject(MeshesData);
-			ba.writeObject(Animations);
+			// ----- write meshes data into byearray --------------------------
+			function w_MData(MeshesData:Array):void
+			{
+				var i:int=0;
+				var j:int=0;
+				var n:int=0;
+				
+				ba.writeShort(MeshesData.length/3);	// number of meshes
+				for (i=0; i<MeshesData.length; i+=3)
+				{
+					// ----- write tri idx data
+					var mT:Vector.<uint> = MeshesData[i+0];
+					n=mT.length/3;
+					ba.writeShort(n);				// number of triangles
+					for (j=0; j<n*3; j++) 
+						ba.writeShort(mT[j]);		// tri vert idx
+					
+					// ----- write vertices data
+					var mV:Vector.<Number> = MeshesData[i+1];
+					n=mV.length/4;
+					ba.writeShort(n);
+					for (j=0; j<n*4; j+=4) 
+					{
+						ba.writeFloat(mV[j+0]);		// texU
+						ba.writeFloat(mV[j+1]);		// texV
+						ba.writeShort(mV[j+2]);		// weightIdx
+						ba.writeShort(mV[j+3]);		// weightElem
+					}
+					
+					// ----- write weights data
+					var mW:Vector.<VertexData> = MeshesData[i+2];
+					n=mW.length;
+					ba.writeShort(n);				// number of weights
+					for (j=0; j<n; j++) 
+					{
+						var vd:VertexData = mW[j];
+						ba.writeFloat(vd.vx);		// posn x
+						ba.writeFloat(vd.vy);		// posn y
+						ba.writeFloat(vd.vz);		// posn x
+						ba.writeFloat(vd.nx);		// normal x
+						ba.writeFloat(vd.ny);		// normal y
+						ba.writeFloat(vd.nz);		// normal z
+						ba.writeFloat(vd.w);		// weight
+						ba.writeShort(vd.idx);		// bone idx
+						ba.writeFloat(vd.tx);		// tangent x
+						ba.writeFloat(vd.ty);		// tangent y
+						ba.writeFloat(vd.tz);		// tangent z
+					}
+				}
+			}//endfunction
+			w_MData(MeshesData);
+			
+			// ----- write animations data into bytearray
+			ba.writeShort(Animations.length/3);		// number of animations
+			for (i=0; i<Animations.length; i+=3)
+			{
+				ba.writeObject(Animations[i+0]);	// animation name 
+				ba.writeShort(Animations[i+1]);		// animation frameRate
+				var Frames:Array = Animations[i+2];
+				var n:int = Frames.length;
+				ba.writeShort(n);					// number of animation frames
+				for (var j:int=0; j<n; j++)
+				{
+					var Frame:Vector.<VertexData> = Frames[j];
+					for (var k:int=0; k<Frame.length; k++)
+					{
+						vd = Frame[k];
+						ba.writeFloat(vd.vx);		// posn x
+						ba.writeFloat(vd.vy);
+						ba.writeFloat(vd.vz);
+						ba.writeFloat(vd.nx);		// normal x
+						ba.writeFloat(vd.ny);
+						ba.writeFloat(vd.nz);
+					}
+				}
+			}
+			
+			// ----- write other swappable skin meshes to bytearray
 			if (md5Skins!=null)
-				for (var i:int=1; i<md5Skins.length; i++)
-					ba.writeObject(md5Skins[i].MeshesData);	// write other swappable skin meshes
+			{
+				ba.writeShort(md5Skins.length-1);	// num of extra skin meshes
+				for (i=1; i<md5Skins.length; i++)
+					w_MData(md5Skins[i].MeshesData);	
+			}
+			else	ba.writeShort(0);				// 0 extra skin meshes
 			var MyFile:FileReference = new FileReference();
 			MyFile.save(ba,fileName+".amf");
 		}//endfunction
 		
 		/**
-		* outputs this MD5Animae data as byte array file
+		* returns MD5Animae from byte array data
 		*/
-		public function saveAsAmf(fileName:String="data") : void
+		public static function parseAmf(ba:ByteArray) : MD5Animae
 		{
-			var ba:ByteArray = new ByteArray();
+			ba.position = 0;
+			var i:int=0;
+			var n:int=0;
 			
-			if (md5Skins!=null) ba.writeObject((md5Skins.length-1)+"");
-			else				ba.writeObject("0");
-			registerClassAlias("VertexDataAlias", VertexData);
-			ba.writeObject(BindPoseData);
-			ba.writeObject(MeshesData);
-			ba.writeObject(Animations);
-			if (md5Skins!=null)
-				for (var i:int=1; i<md5Skins.length; i++)
-					ba.writeObject(md5Skins[i].MeshesData);	// write other swappable skin meshes
-			var MyFile:FileReference = new FileReference();
-			MyFile.save(ba,fileName+".amf");
+			// ----- read bind pose data from bytearray -----------------------
+			var JDat:Array = [];
+			n = ba.readShort();					// number of bones
+			for (i=0; i<n; i++)
+			{
+				JDat.push(ba.readObject());		// joint name string
+				JDat.push(ba.readShort());		// parentIdx
+				JDat.push(new VertexData(	ba.readFloat(),ba.readFloat(),ba.readFloat(),	// px,py,px
+											ba.readFloat(),ba.readFloat(),ba.readFloat())); // nx,ny,nz
+			}
+			
+			// ----- read meshes data into byearray ---------------------------
+			function r_MData(ba:ByteArray):Array
+			{
+				var i:int=0;
+				var j:int=0;
+				var n:int=0;
+				
+				var m:int = ba.readShort();			// number of meshes
+				var A:Array = [];
+				for (i=0; i<m; i++)
+				{
+					// ----- read tri idx data
+					var mT:Vector.<uint> = new Vector.<uint>();
+					n=ba.readShort();				// number of triangles
+					for (j=0; j<n; j++) 
+						mT.push(ba.readShort(),ba.readShort(),ba.readShort());					// tri vert idx 1,2,3
+					
+					// ----- read vertices data
+					var mV:Vector.<Number> = new Vector.<Number>();
+					n=ba.readShort();				// number of vertices
+					for (j=0; j<n; j++) 
+						mV.push(ba.readFloat(),ba.readFloat(),ba.readShort(),ba.readShort());	// texU,texV,weightIdx,weightElem
+					
+					// ----- read weights data
+					var mW:Vector.<VertexData> = new Vector.<VertexData>();
+					n=ba.readShort();				// number of weights
+					for (j=0; j<n; j++)
+						mW.push(new VertexData(	ba.readFloat(),ba.readFloat(),ba.readFloat(),	// px,py,pz
+												ba.readFloat(),ba.readFloat(),ba.readFloat(),	// nx,ny,nz
+												0,0,
+												ba.readFloat(),									// weight
+												ba.readShort(),									// index
+												ba.readFloat(),ba.readFloat(),ba.readFloat()));	// tx,ty,tz
+					A.push(mT,mV,mW);
+				}
+				return A; 
+			}//endfunction
+			var MDat:Array = r_MData(ba);
+			
+			// ----- read animations data from bytearray ----------------------
+			var ADat:Array = [];
+			var a:int = ba.readShort();			// number of animations
+			for (i=0; i<a; i++)
+			{
+				ADat.push(ba.readObject());			// animation name 
+				ADat.push(ba.readShort());			// animation frameRate
+				var Frames:Array = [];
+				var f:int = ba.readShort();			// number of animation frames
+				for (var j:int=0; j<f; j++)
+				{
+					var Frame:Vector.<VertexData> = new Vector.<VertexData>();
+					for (var k:int=0; k<n; k++)
+						Frame.push(new VertexData(	ba.readFloat(),ba.readFloat(),ba.readFloat(),	// px,py,px
+													ba.readFloat(),ba.readFloat(),ba.readFloat())); // nx,ny,nz
+					Frames.push(Frame);
+				}
+				ADat.push(Frames);					// animation frames
+			}
+			
+			// ----- create the MD%Animae obj from data
+			var anim:MD5Animae = new MD5Animae(JDat,MDat,false);
+			anim.Animations = ADat;
+			
+			n = ba.readShort();					// num of extra skin meshes
+			
+			if (n>0)
+			{
+				anim.md5Skins = new Vector.<MD5Animae>();
+				anim.md5Skins.push(new MD5Animae(anim.BindPoseData,anim.MeshesData,false));	// add the default skin first
+				for (i=0; i<n; i++)
+					anim.md5Skins.push(new MD5Animae(anim.BindPoseData,r_MData(ba),false));	// add newly parsed skin	
+			}
+			
+			return anim;
 		}//endfunction
 		
 		/**
@@ -263,31 +395,6 @@
 			ldr.addEventListener(Event.COMPLETE, completeHandler);
 			ldr.load(req);
 		}//endfunction		
-		
-		/**
-		* returns MD5Animae from byte array data
-		*/
-		public static function parseAmf(ba:ByteArray) : MD5Animae
-		{
-			registerClassAlias("VertexDataAlias", VertexData);
-			ba.position = 0;
-			var numOtherSkins:int = Number(ba.readObject()+"");
-			var anim:MD5Animae = new MD5Animae(ba.readObject(),ba.readObject(),false);
-			anim.Animations = ba.readObject();
-			
-			while (numOtherSkins>0)
-			{
-				var meshesData:Array = ba.readObject();
-				if (anim.md5Skins==null)
-				{
-					anim.md5Skins = new Vector.<MD5Animae>();
-					anim.md5Skins.push(new MD5Animae(anim.BindPoseData,anim.MeshesData,false));	// add the default skin first
-				}
-				anim.md5Skins.push(new MD5Animae(anim.BindPoseData,meshesData,false));	// add newly parsed skin
-				numOtherSkins--;
-			}
-			return anim;
-		}//endfunction
 		
 		/**
 		* precalculate weight normals and add to weights data, makes GPU skinning normals calculations possible, 
@@ -1721,43 +1828,6 @@
 		}//endfunction
 				
 		/**
-		* converts the quaternion based joint orientation and translation to matrices and return in joints order
-		*/
-		private static function getTransforms(frameData:Vector.<VertexData>) : Vector.<Matrix4x4>
-		{
-			var JTs:Vector.<Matrix4x4> = new Vector.<Matrix4x4>();
-			var n:uint = frameData.length;
-			// ----- pregenrate joint transform matrices ----------------------
-			for (var j:int=0; j<n; j++)
-			{
-				var jt:VertexData = frameData[j];
-				var b:Number = jt.nx;
-				var c:Number = jt.ny;
-				var d:Number = jt.nz;
-				var a:Number = 1-b*b-c*c-d*d;
-				if (a<0)	a=0;
-				a = -Math.sqrt(a);
-				var jT:Matrix4x4 = Matrix4x4.quaternionToMatrix(a,b,c,d).translate(jt.vx,jt.vy,jt.vz);
-				JTs.push(jT);
-			}
-			return JTs;
-		}//endfunction
-		
-		/**
-		* convenience function for quaternion multiplication
-		*/
-		private static function quatMult(	qax:Number,qay:Number,qaz:Number,qaw:Number,
-											qbx:Number,qby:Number,qbz:Number,qbw:Number) : Vector3D
-		{
-			var qc:Vector3D = new Vector3D(	qax*qbw + qaw*qbx + qay*qbz - qaz*qby,	// x
-											qay*qbw + qaw*qby + qaz*qbx - qax*qbz,	// y
-											qaz*qbw + qaw*qbz + qax*qby - qay*qbx,	// z
-											qaw*qbw - qax*qbx - qay*qby - qaz*qbz);	// w real
-			
-			return qc;
-		}//endfunction
-				
-		/**
 		* parse the animation frame, combining baseframe data with this frame data
 		* expects H:	[boneName,parentIdx,numComp,frameIdx,...]	// Hierarchy data
 		* expects BF:	[px,py,pz,xOrient,yOrient,zOrient,...]		// base frame data
@@ -1940,6 +2010,43 @@
 			o.seg = seg;
 			return o;
 		}//endfunction
-				
+		
+		/**
+		* converts the quaternion based joint orientation and translation to matrices and return in joints order
+		*/
+		private static function getTransforms(frameData:Vector.<VertexData>) : Vector.<Matrix4x4>
+		{
+			var JTs:Vector.<Matrix4x4> = new Vector.<Matrix4x4>();
+			var n:uint = frameData.length;
+			// ----- pregenrate joint transform matrices ----------------------
+			for (var j:int=0; j<n; j++)
+			{
+				var jt:VertexData = frameData[j];
+				var b:Number = jt.nx;
+				var c:Number = jt.ny;
+				var d:Number = jt.nz;
+				var a:Number = 1-b*b-c*c-d*d;
+				if (a<0)	a=0;
+				a = -Math.sqrt(a);
+				var jT:Matrix4x4 = Matrix4x4.quaternionToMatrix(a,b,c,d).translate(jt.vx,jt.vy,jt.vz);
+				JTs.push(jT);
+			}
+			return JTs;
+		}//endfunction
+		
+		/**
+		* convenience function for quaternion multiplication
+		*/
+		private static function quatMult(	qax:Number,qay:Number,qaz:Number,qaw:Number,
+											qbx:Number,qby:Number,qbz:Number,qbw:Number) : Vector3D
+		{
+			var qc:Vector3D = new Vector3D(	qax*qbw + qaw*qbx + qay*qbz - qaz*qby,	// x
+											qay*qbw + qaw*qby + qaz*qbx - qax*qbz,	// y
+											qaz*qbw + qaw*qbz + qax*qby - qay*qbx,	// z
+											qaw*qbw - qax*qbx - qay*qby - qaz*qbz);	// w real
+			
+			return qc;
+		}//endfunction
+		
 	}//endclass
 }//endfunction
