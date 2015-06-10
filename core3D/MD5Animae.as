@@ -1391,39 +1391,65 @@
 		}//endfunction
 		
 		/**
+		 * modifys joint orientation for joint normal to point to given pt in object space
+		 * @param	boneId
+		 * @param	pt
+		 */
+		public function jointsLookAt(Posns:Vector.<Vector3D>,frameData:Vector.<VertexData>): Vector.<VertexData>
+		{
+			if (frameData==null)	frameData = currentPoseData;
+			frameData = frameData.slice();
+			
+			for (var i:int=Math.min(Posns.length-1,frameData.length-1); i>-1; i--)
+				if (Posns[i]!=null)
+				{
+					// ----- derive rotation quaternion for joint to rotate to point
+					var tdir:Vector3D = posnToJointSpace(Posns[i],i,frameData);
+					if (tdir.length>0)
+					{
+						tdir.normalize();
+						var axis:Vector3D = tdir.crossProduct(new Vector3D(0,0,1));
+						var ang:Number = Math.asin(Math.min(1,axis.length));
+						axis.normalize();
+						var cosA_2:Number = Math.cos(ang/2);
+						var sinA_2:Number = Math.sin(ang/2);
+						// Q : i=axis.x*sinA_2 , j=axis.y*sinA_2 , k=axis.z*sinA_2 , w=cosA_2
+						
+						// ----- force joint rotation to point to tpt
+						var jt:VertexData = frameData[i];	// joint quat and posn
+						var b:Number = jt.nx;
+						var c:Number = jt.ny;
+						var d:Number = jt.nz;
+						var a:Number = 1-b*b-c*c-d*d;
+						if (a<0) {a=Math.sqrt(b*b+c*c+d*d); b/=a; c/=a; d/=a; a=0;}	
+						a = -Math.sqrt(a);
+						var q:Vector3D = quatMult(axis.x*sinA_2,axis.y*sinA_2,axis.z*sinA_2,cosA_2, b,c,d,a);	// tweaked quaternion for joint
+						if (q.w>0)	{q.x*=-1; q.y*=-1; q.z*=-1;}		// this has caused me lots of headache
+						var l:Number = Math.sqrt(q.x*q.x+q.y*q.y+q.z*q.z+q.w*q.w);
+						q.x/=l; q.y/=l; q.z/=l; q.w/=l;		// normalize quaternion
+						frameData[i] = new VertexData(jt.vx,jt.vy,jt.vz , q.x,q.y,q.z , jt.u,jt.v,jt.w , jt.idx);
+					}
+				}
+				
+			return frameData;
+		}//endfunction
+		
+		/**
 		* given bones quaternion and translation frame data (not conv to obj space), tweak rotations to simulate mass effect
 		*/
-		//public var massTrace:Mesh = null;
 		private function jointMassSimulate(frameData:Vector.<VertexData>) : Vector.<VertexData>
 		{
 			if (JtM==null) return frameData;
 			
-			if (frameData==null)	frameData = currentPoseData;
-			frameData = frameData.slice();
-									
-			//if (massTrace==null)	massTrace = new Mesh();
-						
-			var b:Number = 0;
-			var c:Number = 0;
-			var d:Number = 0;
-			var a:Number = 0;
-			
 			var wDist:Number = 0.05/skin.transform.determinant3();
 			
-			//var mkrCnt:int=0;
+			var Posns:Vector.<Vector3D> = new Vector.<Vector3D>();
+			
 			for (var i:int=0; i<JtM.length; i++)
 				if (JtM[i]!=null)
 				{
-					var m:VertexData = JtM[i];			// joint mass
-					var jt:VertexData = frameData[i];	// joint quat and posn
-					b = jt.nx;
-					c = jt.ny;
-					d = jt.nz;
-					a = 1-b*b-c*c-d*d;
-					if (a<0) {a=Math.sqrt(b*b+c*c+d*d); b/=a; c/=a; d/=a; a=0;}	
-					a =-Math.sqrt(a);
-					var pt:Vector3D = new Vector3D(0,wDist,0);
-					pt = posnToObjectSpace(pt,i,frameData);	// targ pt in object space!
+					var m:VertexData = JtM[i];
+					var pt:Vector3D = posnToObjectSpace(new Vector3D(0,0,wDist),i,frameData);	// targ pt in object space!
 					
 					if (isNaN(m.nx) || isNaN(m.ny) || isNaN(m.nz))
 					{
@@ -1433,7 +1459,7 @@
 					}
 					else
 					{
-						var dx:Number = pt.x-m.nx;	// in object space!
+						var dx:Number = pt.x-m.nx;	// distance shifted in object space
 						var dy:Number = pt.y-m.ny;
 						var dz:Number = pt.z-m.nz;
 						m.vx+=dx*m.v;		// verlet add velocity*accelF
@@ -1445,49 +1471,13 @@
 						m.nx+=m.vx;			// inc posn with vel
 						m.ny+=m.vy;
 						m.nz+=m.vz;
-						
-						var wPt:Vector3D = new Vector3D(pt.x-dx,pt.y-dy,pt.z-dz);	// weight point in object space
-						pt = quatMult(b,c,d,a, 0,wDist,0,0);	
-						pt = quatMult(pt.x,pt.y,pt.z,pt.w, -b,-c,-d,a);				
-						pt.x += jt.vx; pt.y+=jt.vy; pt.z+=jt.vz;					// targ pt in parent space of joint
-						wPt = posnToJointSpace(wPt,BindPoseData[i*3+1],frameData);	// weight pt in parent space of joint
-						dx = wPt.x-jt.vx;
-						dy = wPt.y-jt.vy;
-						dz = wPt.z-jt.vz;
-						var dl:Number = Math.sqrt(dx*dx+dy*dy+dz*dz);
-						wPt = new Vector3D(jt.vx+dx/dl*wDist,jt.vy+dy/dl*wDist,jt.vz+dz/dl*wDist); 
-						pt.normalize();
-						wPt.normalize();
-						var ang:Number = Math.acos(Math.max(-1,Math.min(1,wPt.x*pt.x+wPt.y*pt.y+wPt.z*pt.z)));
-						if (ang*ang>0.000000001)
-						{
-							var axis:Vector3D = pt.crossProduct(wPt);
-							axis.normalize();
-							var cosA_2:Number = Math.cos(ang/2);
-							var sinA_2:Number = Math.sin(ang/2);
-							pt = quatMult(axis.x*sinA_2,axis.y*sinA_2,axis.z*sinA_2,cosA_2, b,c,d,a);	// tweaked quaternion
-							b = pt.x;
-							c = pt.y;
-							d = pt.z;
-							a = pt.w;
-							if (a>0)	{b=-b; c=-c; d=-d;}		// this has caused me lots of headache
-							var l:Number = Math.sqrt(a*a+b*b+c*c+d*d);
-							if (l>0) {b/=l; c/=l; d/=l; a/=l;}
-							frameData[i] = new VertexData(jt.vx,jt.vy,jt.vz,b,c,d,jt.u,jt.v,jt.w,jt.idx);
-						}
 					}
-					
-					// ----- place marker at correct position
-					/*
-					mkrCnt++;
-					if (massTrace.childMeshes.length<mkrCnt)
-						massTrace.addChild(Mesh.createSphere(0.005));
-					var mkr:Mesh = massTrace.childMeshes[mkrCnt-1];
-					mkr.transform = new Matrix4x4().translate(m.nx,m.ny,m.nz);
-					*/
-				}//endif
-				
-			return frameData;
+					Posns.push(new Vector3D(m.nx,m.ny,m.nz));
+				}
+				else
+					Posns.push(null);
+			
+			return jointsLookAt(Posns,frameData);
 		}//endfunction
 		
 		/**
