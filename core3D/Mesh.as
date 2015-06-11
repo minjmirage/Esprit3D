@@ -495,6 +495,7 @@
 			var n:Number = verticesData.length;
 
 			// ----- calc default normals to data if normals are 0,0,0 --------
+			if (indicesData==null)
 			for (var i:int=0; i<n; i+=24)		// 1 tri takes 24 numbers data
 			{
 				if ((verticesData[3+i]==0 && verticesData[4+i]==0 && verticesData[5+i]==0) ||
@@ -2299,7 +2300,7 @@
 		}//endfunction
 
 		/**
-		* generates a terrain mesh from given height map data with specified channel
+		* generates a terrain mesh from given height map data with specified channel max 128*128
 		*/
 		public static function createHeightMap(map:BitmapData,channel:uint=0,tex:BitmapData=null) : Mesh
 		{
@@ -2307,12 +2308,12 @@
 
 			// ----- generate vertices data -------------------------
 			var V:Vector.<Number> = new Vector.<Number>();
-			var w:int = Math.min(128,map.width);
-			var h:int = Math.min(128,map.height);
+			var w:int =map.width;
+			var h:int = map.height;
 			for (var x:int=0; x<w; x++)
 				for (var y:int=0; y<h; y++)
 				{
-					var th:Number = ((map.getPixel(x,y)>>(channel*8))&0xFF)/255/10;	// terrain height at point
+					var th:Number = ((map.getPixel(x,y)>>(channel*8))&0xFF)/255 - 0.5;	// terrain height at point
 					V.push(	x/(w-1)-0.5,th,y/(h-1)-0.5,			// vertex
 							0,0,0,								// normal
 							x/(w-1),y/(h-1));					// uv
@@ -2375,8 +2376,9 @@
 				V[i*8+5] = N[i].z;
 			}
 
+			// ----- genertates tangents and sets geometry data to mesh -------
 			var m:Mesh = new Mesh();
-			m.createGeometry(V,I);		//
+			m.setGeometry(calcTangentBasis(I,V),I);
 			m.setTexture(tex);		// can be null tex
 			return m;
 		}//endfunction

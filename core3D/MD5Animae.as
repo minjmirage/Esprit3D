@@ -42,9 +42,7 @@
 		private var M:Vector.<Mesh> = null;			// vector of meshes in skin
 		
 		private var _V:Vector.<VertexData> = null;	// working vector used in generateSkin
-		
-		// ----- verlet integration ragdoll physics
-		public var VPJPs:Vector.<Vector3D> = null;		// verlet previous joint positions
+		private var interpData:Vector.<VertexData> = null;	// working vector used to calculate frame pose 
 		
 		/**
 		* Expects parameters of the following formats
@@ -1000,73 +998,91 @@
 		}//endfunction
 		
 		/**
-		* set skin mesh to display animation pose of given animId at given second, 
-		* if 2nd animation is named, interpolate between the 2 
-		*/
-		public function setAnimation(animId:String,secs:Number,animId2:String=null,secs2:Number=0,inter:Number=0.5) : void
+		 * sets skin pose
+		 * @param	poseData
+		 */
+		public function setPose(poseData:Vector.<VertexData>):void
 		{
-			if (Animations.indexOf(animId)!=-1)	// if animation with id exists
-			{
-				var frameRate:Number = Animations[Animations.indexOf(animId)+1];
-				var Frames:Array = Animations[Animations.indexOf(animId)+2];
-				var frameIdx:Number = frameRate*secs;
-				while (frameIdx<0) frameIdx += Frames.length;
-				var idx1:int=int(frameIdx)%Frames.length;
-				var idx2:int=(idx1+1)%Frames.length;
-				var frameData:Vector.<VertexData> = interpolateFrames(Frames[idx1],Frames[idx2],frameIdx-int(frameIdx));
-				
-				// ----- if animation 2 is named, interpolate between animations 1 and 2
-				if (animId2!=null && Animations.indexOf(animId2)!=-1)
-				{
-					frameRate = Animations[Animations.indexOf(animId2)+1];
-					Frames = Animations[Animations.indexOf(animId2)+2];
-					frameIdx = frameRate*secs2;
-					while (frameIdx<0) frameIdx += Frames.length;
-					idx1=int(frameIdx)%Frames.length;
-					idx2=(idx1+1)%Frames.length;
-					var frameData2:Vector.<VertexData> = interpolateFrames(Frames[idx1],Frames[idx2],frameIdx-int(frameIdx));
-					frameData = interpolateFrames(frameData,frameData2,Math.min(1,Math.max(0,inter)));
-				}
-								
-				currentPoseData = jointOrientationsToObjectSpace(frameData);
-				if (GPUSkinning)
-					GPUSkinningUpdateJoints(currentPoseData);	// send new joints orientations data to GPU
-				else
-					generateSkinPose(currentPoseData);
-			}
+			poseData = jointMassSimulate(poseData);	// 
+			
+			currentPoseData = jointOrientationsToObjectSpace(poseData);
+			if (GPUSkinning)
+				GPUSkinningUpdateJoints(currentPoseData);	// send new joints orientations data to GPU
+			else
+				generateSkinPose(currentPoseData);
 		}//endfunction
 		
 		/**
-		* set skin mesh to display animation pose of given animId at given animation frame, (requires less cpu than setAnimation)
+		* return animation pose data given animId at given second, 
+		* if 2nd animation is named, interpolate between the 2 
+		*/
+		public function getAnimationPose(animId:String,secs:Number,animId2:String=null,secs2:Number=0,inter:Number=0.5) : Vector.<VertexData>
+		{
+			var frameData:Vector.<VertexData> = null;
+			
+			if (Animations.indexOf(animId)==-1)	// if animation with id does not exist
+			{
+				frameData = new Vector.<VertexData>();
+				for (var i:int=0; i<BindPoseData.length; i+=3)
+					frameData.push(BindPoseData[i+2]);
+				return frameData;
+			}
+			
+			var frameRate:Number = Animations[Animations.indexOf(animId)+1];
+			var Frames:Array = Animations[Animations.indexOf(animId)+2];
+			var frameIdx:Number = frameRate*secs;
+			while (frameIdx<0) frameIdx += Frames.length;
+			var idx1:int=int(frameIdx)%Frames.length;
+			var idx2:int=(idx1+1)%Frames.length;
+			frameData = interpolateFrames(Frames[idx1],Frames[idx2],frameIdx-int(frameIdx));
+			
+			// ----- if animation 2 is named, interpolate between animations 1 and 2
+			if (animId2!=null && Animations.indexOf(animId2)!=-1)
+			{
+				frameRate = Animations[Animations.indexOf(animId2)+1];
+				Frames = Animations[Animations.indexOf(animId2)+2];
+				frameIdx = frameRate*secs2;
+				while (frameIdx<0) frameIdx += Frames.length;
+				idx1=int(frameIdx)%Frames.length;
+				idx2=(idx1+1)%Frames.length;
+				var frameData2:Vector.<VertexData> = interpolateFrames(Frames[idx1],Frames[idx2],frameIdx-int(frameIdx));
+				frameData = interpolateFrames(frameData,frameData2,Math.min(1,Math.max(0,inter)));
+			}
+			
+			return frameData;
+		}//endfunction
+		
+		/**
+		* return animation pose data given animId at given animation frame, (requires less cpu than getAnimationPose)
 		* if 2nd animation is named, interpolate between the 2
 		*/
-		private var interpData:Vector.<VertexData> = null;
-		public function setAnimationFrame(animId:String,frame:uint,animId2:String=null,frame2:uint=0,inter:Number=0.5) : void
+		public function getAnimationFramePose(animId:String,frame:uint,animId2:String=null,frame2:uint=0,inter:Number=0.5) : Vector.<VertexData>
 		{
-			if (Animations.indexOf(animId)!=-1)	// if animation with id exists
+			var frameData:Vector.<VertexData> = null;
+			
+			if (Animations.indexOf(animId)==-1)	// if animation with id does not exist
 			{
-				var Frames:Array = Animations[Animations.indexOf(animId)+2];
-				frame = frame%Frames.length;
-				var frameData:Vector.<VertexData> = Frames[frame];
-				
-				// ----- if animation 2 is named, interpolate between animations 1 and 2
-				if (animId2!=null && Animations.indexOf(animId2)!=-1 && inter>0)
-				{
-					Frames = Animations[Animations.indexOf(animId2)+2];
-					frame2 = frame2%Frames.length;
-					var frameData2:Vector.<VertexData> = Frames[frame2];
-					frameData = interpolateFrames(frameData,frameData2,Math.min(1,Math.max(0,inter)),interpData);
-					interpData = frameData;
-				}
-				
-				frameData = jointMassSimulate(frameData);	// 
-				
-				currentPoseData = jointOrientationsToObjectSpace(frameData);
-				if (GPUSkinning)
-					GPUSkinningUpdateJoints(currentPoseData);	// send new joints orientations data to GPU
-				else
-					generateSkinPose(currentPoseData);
+				frameData = new Vector.<VertexData>();
+				for (var i:int=0; i<BindPoseData.length; i+=3)
+					frameData.push(BindPoseData[i+2]);
+				return frameData;
 			}
+			
+			var Frames:Array = Animations[Animations.indexOf(animId)+2];
+			frame = frame%Frames.length;
+			frameData = Frames[frame];
+			
+			// ----- if animation 2 is named, interpolate between animations 1 and 2
+			if (animId2!=null && Animations.indexOf(animId2)!=-1 && inter>0)
+			{
+				Frames = Animations[Animations.indexOf(animId2)+2];
+				frame2 = frame2%Frames.length;
+				var frameData2:Vector.<VertexData> = Frames[frame2];
+				frameData = interpolateFrames(frameData,frameData2,Math.min(1,Math.max(0,inter)),interpData);
+				interpData = frameData;
+			}
+			
+			return frameData;
 		}//endfunction
 		
 		/**
@@ -1075,7 +1091,7 @@
 		* returns interpolated data: [{px,py,pz, nx,ny,nz},...] where (px,py,pz)=posn, (nx,ny,nz)=quat 
 		* if R is given, overwrite results into R
 		*/
-		private function interpolateFrames(fD1:Vector.<VertexData>,fD2:Vector.<VertexData>,t:Number,R:Vector.<VertexData>=null) : Vector.<VertexData>
+		public function interpolateFrames(fD1:Vector.<VertexData>,fD2:Vector.<VertexData>,t:Number,R:Vector.<VertexData>=null) : Vector.<VertexData>
 		{
 			t = Math.max(0,Math.min(1,t));
 			var i:int=0;
@@ -1539,160 +1555,6 @@
 			return pt;
 		}//endfunction
 		
-		/**
-		* Clears off any current verlet rag doll working state
-		*/
-		public function resetRagDoll() : void	{VPJPs=null;}//endfunction
-		
-		/**
-		* use verlet simulation to animate character as ragdoll 
-		*	Verlet Physics : x_new = x + (x-x_old) + a*t*t
-		*	Verlet Physics time corrected : x_new = x + (x-x_old)*(t/t_old) + a*t*t
-		* reference BindPose=[jointName,parentIdx,jointData, ...] where jointData: vx,vy,vz=position nx,ny,nz=quaternion 
-		* given 
-		*	fD=[{vx,vy,vz, nx,ny,nz},...] where (vx,vy,vz)=posn, (nx,ny,nz)=quat  in joints space
-		*	M:Mesh supplying the collision geometry for ragdoll to fall on
-		*	g:Vector3D the acceleration acting on the joint points
-		*/
-		public function simulateRagDoll(g:Vector3D,M:Mesh) : void
-		{
-			var T:Matrix4x4 = skin.transform;		// skin transform to external space
-			if (T==null)	T = new Matrix4x4();
-			var invT:Matrix4x4 = T.inverse();		// inverse to skin transform
-						
-			var i:int=0;
-			var dx:Number=invT.aa*g.x + invT.ab*g.y + invT.ac*g.z;
-			var dy:Number=invT.ba*g.x + invT.bb*g.y + invT.bc*g.z;
-			var dz:Number=invT.ca*g.x + invT.cb*g.y + invT.cc*g.z;
-			g.x=dx;	g.y=dy;	g.z=dz;	// transform g to object space
-			var pidx:int=0;
-			var jt:VertexData;		// joint data
-			var pjt:VertexData;		// parent joint data
-			var opt:Vector3D;		// prev joint posn
-			
-			// ----- convert joint orientations to object space ---------------
-			var fD:Vector.<VertexData> = currentPoseData;
-			
-			// ----- calculate length restrictions between joints -------------
-			if (VPJPs==null)	// if previous joint positions and length data is non existant
-			{
-				VPJPs = new Vector.<Vector3D>();	// prev positions of each joint
-				jt = BindPoseData[2];						// root joint data
-				VPJPs.push(new Vector3D(jt.vx,jt.vy,jt.vz));// root joint prev position
-				for (i=1; i<fD.length; i++)
-				{
-					jt = BindPoseData[i*3+2];				// joint data
-					pidx = BindPoseData[i*3+1];				// parent joint idx
-					pjt = BindPoseData[pidx*3+2];			// parent joint data
-					dx = jt.vx-pjt.vx;
-					dy = jt.vy-pjt.vy;
-					dz = jt.vz-pjt.vz;
-					// record down current position and length to parent joint
-					VPJPs.push(new Vector3D(fD[i].vx,fD[i].vy,fD[i].vz,Math.sqrt(dx*dx+dy*dy+dz*dz)));
-				}//endfor
-			}
-			
-			// ----- move joint points by velocity and g ----------------------
-			for (i=0; i<fD.length; i++)
-			{
-				jt = fD[i];		// joint data in frame data
-				opt = VPJPs[i];	// prev joint point
-												
-				// ----- move current position 
-				dx = jt.vx-opt.x+g.x;	// next dist x travelled
-				dy = jt.vy-opt.y+g.y;	// next dist y travelled
-				dz = jt.vz-opt.z+g.z;	// next dist z travelled
-				// ----- record previous position
-				opt.x = jt.vx;
-				opt.y = jt.vy;
-				opt.z = jt.vz;
-				jt.vx+= dx;
-				jt.vy+= dy;
-				jt.vz+= dz;
-			}//endfor
-			
-			// ----- shift joints to maintain orientation wrt to parent -------
-			for (i=0; i<fD.length; i++)
-			{
-			}//endfor
-			
-			// ----- apply length restrictions to joints ----------------------
-			for (i=1; i<fD.length; i++)
-			{
-				jt = fD[i];
-				pidx = BindPoseData[i*3+1];			// parent joint idx
-				pjt = fD[pidx];
-				var l:Number = VPJPs[i].w;			// specified length
-				dx = jt.vx-pjt.vx;
-				dy = jt.vy-pjt.vy;
-				dz = jt.vz-pjt.vz;
-				var dl:Number = Math.sqrt(dx*dx+dy*dy+dz*dz); // current length
-				if (dl>0) {dx/=dl;	dy/=dl;	dz/=dl;}// normalize direction
-				var f:Number = (dl-l)/2;			// half distance
-				jt.vx-=f*dx;						// shift back joint by f
-				jt.vy-=f*dy;
-				jt.vz-=f*dz;
-				pjt.vx+=f*dx;						// shift forward parent by f
-				pjt.vy+=f*dy;
-				pjt.vz+=f*dz;
-			}//endfor
-						
-			// ----- joint collision check ------------------------------------
-			for (i=1; i<fD.length; i++)	// dont test root joint
-			{
-				jt = fD[i];			// ending position
-				opt = VPJPs[i];		// starting position
-				dx = jt.vx-opt.x;	// final dist x to travel
-				dy = jt.vy-opt.y;	// final dist y to travel
-				dz = jt.vz-opt.z;	// final dist z to travel
-				if (dx*dx+dy*dy+dz*dz>0)	// if moving
-				{
-					var epx:Number= T.aa*opt.x + T.ab*opt.y + T.ac*opt.z + T.ad;	// transform to world coords
-					var epy:Number= T.ba*opt.x + T.bb*opt.y + T.bc*opt.z + T.bd; 
-					var epz:Number= T.ca*opt.x + T.cb*opt.y + T.cc*opt.z + T.cd; 
-					var evx:Number= T.aa*dx + T.ab*dy + T.ac*dz;					// transform to world vector
-					var evy:Number= T.ba*dx + T.bb*dy + T.bc*dz;
-					var evz:Number= T.ca*dx + T.cb*dy + T.cc*dz;
-					var evl:Number = Math.sqrt(evx*evx+evy*evy+evz*evz);
-					//var ux:Number=evx/evl;
-					//var uy:Number=evy/evl;
-					//var uz:Number=evz/evl;
-					//var hit:VertexData = M.lineHitsMesh(epx-ux*0.01,epy-uy*0.01,epz-uz*0.01,
-					//									evx+ux*0.01,evy+uy*0.01,evz+uz*0.01);
-					var hit:VertexData = M.lineHitsMesh(epx,epy,epz,evx,evy,evz);
-					if (hit!=null)
-					{
-						// ----- calculate ratio of dist to hit pt
-						var r:Number = Math.sqrt((hit.vx-epx)*(hit.vx-epx)+(hit.vy-epy)*(hit.vy-epy)+(hit.vz-epz)*(hit.vz-epz))/evl;
-						//debugTf.appendText("hit:"+hit+"  r:"+r);
-						jt.vx = opt.x+dx*r;
-						jt.vy = opt.y+dy*r;
-						jt.vz = opt.z+dz*r;
-						
-						// ----- calculate hit normal in obj space
-						var ux:Number = (invT.aa*hit.nx + invT.ab*hit.ny + invT.ac*hit.nz)*0.001;	
-						var uy:Number = (invT.ba*hit.nx + invT.bb*hit.ny + invT.bc*hit.nz)*0.001; 
-						var uz:Number = (invT.ca*hit.nx + invT.cb*hit.ny + invT.cc*hit.nz)*0.001; 
-						//debugTf.appendText("  hit normal=("+int(ux*100)/100+","+int(uy*100)/100+","+int(uz*100)/100+")\n");
-						
-						// ----- apply push from this particular joint to connecting joints 
-						fD[i].vx+=ux;	// maintain hit surface separation
-						fD[i].vy+=uy;
-						fD[i].vz+=uz;
-					}
-				}//endif
-			}	
-			
-			// ----- recalculate joint orientations ---------------------------
-			//???
-			
-			// ----- update skin according to joint posns ---------------------
-			if (GPUSkinning)
-				GPUSkinningUpdateJoints(currentPoseData);	// send new joints orientations data to GPU
-			else
-				generateSkinPose(currentPoseData);
-		}//endfunction
-						
 		/**
 		* load and update the texture of current skin
 		*/
