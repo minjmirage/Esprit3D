@@ -492,26 +492,36 @@
 				debugTrace("trimming numvertices down to "+maxVertices);
 				verticesData = verticesData.slice(0,maxVertices*8);
 			}
-			var n:Number = verticesData.length;
-
-			// ----- calc default normals to data if normals are 0,0,0 --------
-			if (indicesData==null)
-			for (var i:int=0; i<n; i+=24)		// 1 tri takes 24 numbers data
+			var n:Number = verticesData.length/8;
+			
+			// ----- generate indices data for triangles if null --------------
+			if (indicesData == null)
 			{
-				if ((verticesData[3+i]==0 && verticesData[4+i]==0 && verticesData[5+i]==0) ||
-					(verticesData[11+i]==0 && verticesData[12+i]==0 && verticesData[13+i]==0) ||
-					(verticesData[19+i]==0 && verticesData[20+i]==0 && verticesData[21+i]==0))
+				indicesData=new Vector.<uint>();
+				for (i=0; i<n; i++)	indicesData.push(i);
+			}
+			
+			// ----- calc default normals to data if normals are 0,0,0 --------
+			for (var i:int=0; i<n; i+=3)		// 1 tri takes 24 numbers data
+			{
+				var ia:int = indicesData[i] * 8;
+				var ib:int = indicesData[i+1] * 8;
+				var ic:int = indicesData[i+2] * 8;
+				
+				if ((verticesData[3+ia]==0 && verticesData[4+ia]==0 && verticesData[5+ia]==0) ||
+					(verticesData[3+ib]==0 && verticesData[4+ib]==0 && verticesData[5+ib]==0) ||
+					(verticesData[3+ic]==0 && verticesData[4+ic]==0 && verticesData[5+ic]==0))
 				{
 					// ----- get vertices -------------------------------------
-					var vax:Number = verticesData[0+i];
-					var vay:Number = verticesData[1+i];
-					var vaz:Number = verticesData[2+i];
-					var vbx:Number = verticesData[8+i];
-					var vby:Number = verticesData[9+i];
-					var vbz:Number = verticesData[10+i];
-					var vcx:Number = verticesData[16+i];
-					var vcy:Number = verticesData[17+i];
-					var vcz:Number = verticesData[18+i];
+					var vax:Number = verticesData[0+ia];
+					var vay:Number = verticesData[1+ia];
+					var vaz:Number = verticesData[2+ia];
+					var vbx:Number = verticesData[0+ib];
+					var vby:Number = verticesData[1+ib];
+					var vbz:Number = verticesData[2+ib];
+					var vcx:Number = verticesData[0+ic];
+					var vcy:Number = verticesData[1+ic];
+					var vcz:Number = verticesData[2+ic];
 
 					// ----- calculate default normals ------------------------
 					var px:Number = vbx - vax;
@@ -526,19 +536,11 @@
 					var nz:Number = px*qy-py*qx;	//	unit normal z for the triangle
 					var nl:Number = Math.sqrt(nx*nx+ny*ny+nz*nz);
 					nx/=nl; ny/=nl; nz/=nl;
-					verticesData[3+i]=nx; verticesData[4+i]=ny; verticesData[5+i]=nz;
-					verticesData[11+i]=nx; verticesData[12+i]=ny; verticesData[13+i]=nz;
-					verticesData[19+i]=nx; verticesData[20+i]=ny; verticesData[21+i]=nz;
+					verticesData[3+ia]=nx; verticesData[4+ia]=ny; verticesData[5+ia]=nz;
+					verticesData[3+ib]=nx; verticesData[4+ib]=ny; verticesData[5+ib]=nz;
+					verticesData[3+ic]=nx; verticesData[4+ic]=ny; verticesData[5+ic]=nz;
 				}//endif
 			}//endfor
-
-			// ----- generate indices data for triangles if null --------------
-			if (indicesData == null)
-			{
-				indicesData=new Vector.<uint>();
-				n/=8;
-				for (i=0; i<n; i++)	indicesData.push(i);
-			}
 
 			// ----- genertates tangents and sets geometry data to mesh -------
 			setGeometry(calcTangentBasis(indicesData,verticesData),indicesData);
@@ -1886,11 +1888,12 @@
 		/**
 		* create a sphere of given texture
 		*/
-		public static function createSphere(r:Number,lon:uint=32,lat:uint=16,tex:BitmapData=null,soft:Boolean=true) : Mesh
+		public static function createSphere(r:Number,lon:uint=32,lat:uint=16,tex:BitmapData=null,soft:Boolean=true,fromLat:uint=0,toLat:uint=uint.MAX_VALUE) : Mesh
 		{
 			var S:Vector.<Number> = new Vector.<Number>();
-			var i:int=0;
-			while (i<lat)
+			var i:int = fromLat;
+			toLat = Math.min(toLat, lat);
+			while (i<toLat)
 			{
 				var sinL0:Number = Math.sin(Math.PI*i/lat);
 				var sinL1:Number = Math.sin(Math.PI*(i+1)/lat);
@@ -1902,10 +1905,11 @@
 															-cosL1*r,
 															lon,soft);
 
+				var _vdiv:Number = toLat - fromLat;
 				// ----- adjust UVs of mesh to wrap entire sphere instead
 				for (var j:int=0; j<A.length; j+=8)
 				{
-					A[j+7]=i/lat+A[j+7]/lat;
+					A[j+7]=(i-fromLat)/_vdiv+A[j+7]/_vdiv;
 					if (soft)
 					{	// recalculate normals
 						var nx:Number = A[j+0];
@@ -2025,7 +2029,7 @@
 				if (soft)	// apply Smooth Shading
 				{
 					var mz:Number = (z1+z2)/2;
-					if (r2>0) A.push(	sin_a1*r1,cos_a1*r1,z1,	// vertex
+					if (r2!=0) A.push(	sin_a1*r1,cos_a1*r1,z1,	// vertex
 										sin_a1*r1,cos_a1*r1,z1,	// normal
 										i/n,0,
 										sin_a1*r2,cos_a1*r2,z2,	// vertex
@@ -2034,7 +2038,7 @@
 										sin_a2*r2,cos_a2*r2,z2,	// vertex
 										sin_a2*r2,cos_a2*r2,z2,	// normal
 										(i+1)/n,1);
-					if (r1>0) A.push(	sin_a2*r1,cos_a2*r1,z1,	// vertex
+					if (r1!=0) A.push(	sin_a2*r1,cos_a2*r1,z1,	// vertex
 										sin_a2*r1,cos_a2*r1,z1,	// normal
 										(i+1)/n,0,
 										sin_a1*r1,cos_a1*r1,z1,	// vertex
@@ -2046,7 +2050,7 @@
 				}
 				else
 				{
-					if (r2>0) A.push(	sin_a1*r1,cos_a1*r1,z1,	// vertex
+					if (r2!=0) A.push(	sin_a1*r1,cos_a1*r1,z1,	// vertex
 									 	0,0,0,	// normal
 										i/n,0,
 										sin_a1*r2,cos_a1*r2,z2,	// vertex
@@ -2055,7 +2059,7 @@
 										sin_a2*r2,cos_a2*r2,z2,	// vertex
 										0,0,0,	// normal
 										(i+1)/n,1);
-					if (r1>0) A.push(	sin_a2*r1,cos_a2*r1,z1,	// vertex
+					if (r1!=0) A.push(	sin_a2*r1,cos_a2*r1,z1,	// vertex
 									 	0,0,0,	// normal
 										(i+1)/n,0,
 										sin_a1*r1,cos_a1*r1,z1,	// vertex
@@ -2302,7 +2306,7 @@
 		/**
 		* generates a terrain mesh from given height map data with specified channel max 128*128
 		*/
-		public static function createHeightMap(map:BitmapData,channel:uint=0,tex:BitmapData=null) : Mesh
+		public static function createHeightMap(map:BitmapData,f:Number=1,channel:uint=0,tex:BitmapData=null) : Mesh
 		{
 			channel = Math.min(3,channel);
 
@@ -2314,7 +2318,7 @@
 				for (var y:int=0; y<h; y++)
 				{
 					var th:Number = ((map.getPixel(x,y)>>(channel*8))&0xFF)/255 - 0.5;	// terrain height at point
-					V.push(	x/(w-1)-0.5,th,y/(h-1)-0.5,			// vertex
+					V.push(	x/(w-1)-0.5,th*f,y/(h-1)-0.5,			// vertex
 							0,0,0,								// normal
 							x/(w-1),y/(h-1));					// uv
 				}
@@ -3416,7 +3420,7 @@
 
 			return s;
 		}//endfunction
-
+		
 		/**
 		* environment mapping with cube map		(7 instrs)
 		* outputs:	 ft4 = env map colors
@@ -3557,7 +3561,7 @@
 				"sub ft7.xyz, v0.xyz,  fc"+(idx*2+4)+".xyz\n"+		// ft7= posn from light POV
 				"dp3 ft7.w, ft7.xyz, ft7.xyz\n"+					// ft7.w = dist squared from light src
 				"sqt ft7.w, ft7.w\n"+								// ft7.w = dist
-
+/*
 				// ----- perspective correction bias
 				"mov ft4.xyz, fc"+(idx*2+4)+".xyz\n"+
 				"neg ft4.xyz, ft4.xyz\n"+							// ft4.xyz = cam posn from light POV
@@ -3573,7 +3577,7 @@
 				"sub ft4.w, ft4.w, fc"+(idx*2+5)+".w\n"+			//
 				"mul ft4.xyz, ft4.xyz, ft4.www\n"+					// ft4.xyz = adjusted perpendicular vector from camV to vertex
 				"add ft7.xyz, ft7.xyz, ft4.xyz\n"+					// ft7.xyz =  perpendicular shifted position
-
+*/
 				// ----- chk shadow z map, if in shadows, do not add ft3
 				"tex ft4, ft7.xyz, fs"+(4+idx)+" <cube,nearest>\n"+	// ft4=value depthTexture coordinate
 				"dp4 ft4.w, ft4, fc"+(numLights*2+4)+"\n"+			// ft4.w= dist value from depth texture
@@ -3594,7 +3598,7 @@
 			"dp3 vt0.w, vt0.xyz, vt0.xyz\n"+	// vt0.w = dist Squared from center
 			"sqt vt0.w, vt0.w\n"+				// vt0.w = dist
 			"mov v0, vt0\n" +					// output dist Sq to fragment shader v0
-
+/*
 			// ----- perspective correction bias
 			"dp3 vt1.w, vt0.xyz, vc127.xyz\n"+	// vt1.w = proj dist onto unit camV
 			"mul vt1.xyz, vc127.xyz, vt1.www\n"+// vt1.xyz = vector along unit camV
@@ -3610,7 +3614,7 @@
 			//"sub vt1.w, vt1.w, vc0.w\n"+	// TEST!
 			"mul vt1.xyz, vt1.xyz, vt1.www\n"+	// vt1.xyz = adjusted perpendicular vector from camV to vertex
 			"add vt0.xyz, vt0.xyz, vt1.xyz\n"+	// vt0.xyz = perpendicular shifted position
-
+*/
 			"div vt0.xyw, vt0.xyz, vc0.xxxx\n"+	// vt0.xyw = x/nearClip,y/nearClip,z/nearClip	(homogeneous coordinate)
 			"mov vt0.z, vc4.w\n" + 				// vt0.z = 1
 			// vt0.xyz will be automatically divided by vt0.w	depth buffer test (greater)
@@ -3837,6 +3841,8 @@ class CollisionGeometry
 	public var maxXYZ:Vector3D;
 	public var radius:Number;
 	public var Tris:Vector.<TriData>;
+	
+	private var BoundingTris:Vector.<TriData> = null;	// triangles that makes up the bounding cube of this geometry
 
 	/**
 	* creates Tris data and calculates max min and bounding radius
@@ -3884,6 +3890,49 @@ class CollisionGeometry
 			maxXYZ.z=Math.max(maxXYZ.z,td.az,td.bz,td.cz);
 		}
 
+		BoundingTris = 
+		Vector.<TriData>([new TriData(	minXYZ.x,minXYZ.y,minXYZ.z,		// front plane
+										maxXYZ.x,minXYZ.y,minXYZ.z,
+										maxXYZ.x,maxXYZ.y,minXYZ.z),
+						new TriData(	minXYZ.x,minXYZ.y,minXYZ.z,
+										minXYZ.x,maxXYZ.y,minXYZ.z,
+										maxXYZ.x,maxXYZ.y,minXYZ.z),
+										
+						new TriData(	minXYZ.x,minXYZ.y,maxXYZ.z,		// back plane
+										maxXYZ.x,minXYZ.y,maxXYZ.z,
+										maxXYZ.x,maxXYZ.y,maxXYZ.z),
+						new TriData(	minXYZ.x,minXYZ.y,maxXYZ.z,
+										minXYZ.x,maxXYZ.y,maxXYZ.z,
+										maxXYZ.x,maxXYZ.y,maxXYZ.z),
+										
+						new TriData(	minXYZ.x,minXYZ.y,minXYZ.z,		// left plane
+										minXYZ.x,maxXYZ.y,minXYZ.z,
+										minXYZ.x,maxXYZ.y,maxXYZ.z),
+						new TriData(	minXYZ.x,minXYZ.y,minXYZ.z,
+										minXYZ.x,minXYZ.y,maxXYZ.z,
+										minXYZ.x,maxXYZ.y,maxXYZ.z),
+										
+						new TriData(	maxXYZ.x,minXYZ.y,minXYZ.z,		// right plane
+										maxXYZ.x,maxXYZ.y,minXYZ.z,
+										maxXYZ.x,maxXYZ.y,maxXYZ.z),
+						new TriData(	maxXYZ.x,minXYZ.y,minXYZ.z,
+										maxXYZ.x,minXYZ.y,maxXYZ.z,
+										maxXYZ.x,maxXYZ.y,maxXYZ.z),
+
+						new TriData(	minXYZ.x,minXYZ.y,minXYZ.z,		// bottom plane
+										maxXYZ.x,minXYZ.y,minXYZ.z,
+										maxXYZ.x,minXYZ.y,maxXYZ.z),
+						new TriData(	minXYZ.x,minXYZ.y,minXYZ.z,
+										minXYZ.x,minXYZ.y,maxXYZ.z,
+										maxXYZ.x,minXYZ.y,maxXYZ.z),
+										
+						new TriData(	minXYZ.x,maxXYZ.y,minXYZ.z,		// top plane
+										maxXYZ.x,maxXYZ.y,minXYZ.z,
+										maxXYZ.x,maxXYZ.y,maxXYZ.z),
+						new TriData(	minXYZ.x,maxXYZ.y,minXYZ.z,
+										minXYZ.x,maxXYZ.y,maxXYZ.z,
+										maxXYZ.x,maxXYZ.y,maxXYZ.z)]);
+		
 		radius = Math.sqrt(radius);
 	}//endConstructor
 
@@ -4187,58 +4236,7 @@ class CollisionGeometry
 			oy>=minXYZ.y && oy<=maxXYZ.y &&
 			oz>=minXYZ.z && oz<=maxXYZ.z)		return true;
 
-		if (lineTriangleIntersection(ox,oy,oz,vx,vy,vz,	// front plane
-									minXYZ.x,minXYZ.y,minXYZ.z,
-									maxXYZ.x,minXYZ.y,minXYZ.z,
-									maxXYZ.x,maxXYZ.y,minXYZ.z)!=null ||
-			lineTriangleIntersection(ox,oy,oz,vx,vy,vz,
-									minXYZ.x,minXYZ.y,minXYZ.z,
-									minXYZ.x,maxXYZ.y,minXYZ.z,
-									maxXYZ.x,maxXYZ.y,minXYZ.z)!=null)	return true;
-		if (lineTriangleIntersection(ox,oy,oz,vx,vy,vz,	// back plane
-									minXYZ.x,minXYZ.y,maxXYZ.z,
-									maxXYZ.x,minXYZ.y,maxXYZ.z,
-									maxXYZ.x,maxXYZ.y,maxXYZ.z)!=null ||
-			lineTriangleIntersection(ox,oy,oz,vx,vy,vz,
-									minXYZ.x,minXYZ.y,maxXYZ.z,
-									minXYZ.x,maxXYZ.y,maxXYZ.z,
-									maxXYZ.x,maxXYZ.y,maxXYZ.z)!=null)	return true;
-
-		if (lineTriangleIntersection(ox,oy,oz,vx,vy,vz,	// left plane
-									minXYZ.x,minXYZ.y,minXYZ.z,
-									minXYZ.x,maxXYZ.y,minXYZ.z,
-									minXYZ.x,maxXYZ.y,maxXYZ.z)!=null ||
-			lineTriangleIntersection(ox,oy,oz,vx,vy,vz,
-									minXYZ.x,minXYZ.y,minXYZ.z,
-									minXYZ.x,minXYZ.y,maxXYZ.z,
-									minXYZ.x,maxXYZ.y,maxXYZ.z)!=null)	return true;
-		if (lineTriangleIntersection(ox,oy,oz,vx,vy,vz,	// right plane
-									maxXYZ.x,minXYZ.y,minXYZ.z,
-									maxXYZ.x,maxXYZ.y,minXYZ.z,
-									maxXYZ.x,maxXYZ.y,maxXYZ.z)!=null ||
-			lineTriangleIntersection(ox,oy,oz,vx,vy,vz,
-									maxXYZ.x,minXYZ.y,minXYZ.z,
-									maxXYZ.x,minXYZ.y,maxXYZ.z,
-									maxXYZ.x,maxXYZ.y,maxXYZ.z)!=null)	return true;
-
-		if (lineTriangleIntersection(ox,oy,oz,vx,vy,vz,	// bottom plane
-									minXYZ.x,minXYZ.y,minXYZ.z,
-									maxXYZ.x,minXYZ.y,minXYZ.z,
-									maxXYZ.x,minXYZ.y,maxXYZ.z)!=null ||
-			lineTriangleIntersection(ox,oy,oz,vx,vy,vz,
-									minXYZ.x,minXYZ.y,minXYZ.z,
-									minXYZ.x,minXYZ.y,maxXYZ.z,
-									maxXYZ.x,minXYZ.y,maxXYZ.z)!=null)	return true;
-		if (lineTriangleIntersection(ox,oy,oz,vx,vy,vz,	// top plane
-									minXYZ.x,maxXYZ.y,minXYZ.z,
-									maxXYZ.x,maxXYZ.y,minXYZ.z,
-									maxXYZ.x,maxXYZ.y,maxXYZ.z)!=null ||
-			lineTriangleIntersection(ox,oy,oz,vx,vy,vz,
-									minXYZ.x,maxXYZ.y,minXYZ.z,
-									minXYZ.x,maxXYZ.y,maxXYZ.z,
-									maxXYZ.x,maxXYZ.y,maxXYZ.z)!=null)	return true;
-
-		return false;
+		return _lineHitsGeometry(ox,oy,oz,vx,vy,vz,BoundingTris)!=null;
 	}//endfunction
 
 	/**
@@ -4246,6 +4244,15 @@ class CollisionGeometry
 	* returns {vx,vy,vz, nx,ny,nz}	where (vx,vy,vz) is hit point and (nx,ny,nz) is triangle normal
 	*/
 	public function lineHitsGeometry(lox:Number,loy:Number,loz:Number,lvx:Number,lvy:Number,lvz:Number) : VertexData
+	{
+		return _lineHitsGeometry(lox,loy,loz,lvx,lvy,lvz,Tris);
+	}//endfunction
+	
+	/**
+	* returns point where line pt:(lox,loy,loz) vect:(lvx,lvy,lvz) hits this geometry
+	* returns {vx,vy,vz, nx,ny,nz}	where (vx,vy,vz) is hit point and (nx,ny,nz) is triangle normal
+	*/
+	private function _lineHitsGeometry(lox:Number,loy:Number,loz:Number,lvx:Number,lvy:Number,lvz:Number,Tris:Vector.<TriData>) : VertexData
 	{
 		var hit:VertexData = null;
 		for (var i:int=Tris.length-1; i>=0; i--)
@@ -4266,18 +4273,9 @@ class CollisionGeometry
 			var cy:Number = tri.cy;
 			var cz:Number = tri.cz;
 
-			var px:Number = bx - ax;		// tri side vector from a to b
-			var py:Number = by - ay;		// tri side vector from a to b
-			var pz:Number = bz - az;		// tri side vector from a to b
-
-			var qx:Number = cx - ax;		// tri side vector from a to c
-			var qy:Number = cy - ay;		// tri side vector from a to c
-			var qz:Number = cz - az;		// tri side vector from a to c
-
-			// normal by determinant Tn
-			var nx:Number = py*qz-pz*qy;	//	normal x for the triangle
-			var ny:Number = pz*qx-px*qz;	//	normal y for the triangle
-			var nz:Number = px*qy-py*qx;	//	normal z for the triangle
+			var nx:Number = tri.nx;	//	normal x for the triangle
+			var ny:Number = tri.ny;	//	normal y for the triangle
+			var nz:Number = tri.nz;	//	normal z for the triangle
 
 			// let X be the intersection point, then equation of triangle plane Tn.(X-Ta) = 0
 			// but X = Lo+Lv*k   =>   Tn.(Lo+Lv*k-Ta) = 0    =>   Tn.Lv*k + Tn.(Lo-Ta) = 0
@@ -4294,6 +4292,14 @@ class CollisionGeometry
 					var ix:Number = lox+lvx*k - ax;		// vector to segment intersection on triangle plane
 					var iy:Number = loy+lvy*k - ay;		// vector to segment intersection on triangle plane
 					var iz:Number = loz+lvz*k - az;		// vector to segment intersection on triangle plane
+
+					var px:Number = bx - ax;		// tri side vector from a to b
+					var py:Number = by - ay;		// tri side vector from a to b
+					var pz:Number = bz - az;		// tri side vector from a to b
+
+					var qx:Number = cx - ax;		// tri side vector from a to c
+					var qy:Number = cy - ay;		// tri side vector from a to c
+					var qz:Number = cz - az;		// tri side vector from a to c
 
 					// find scalars along triangle sides P and Q s.t. sP+tQ = I
 					// s = (p.q)(w.q)-(q.q)(w.p)/(p.q)(p.q)-(p.p)(q.q)
@@ -4340,63 +4346,122 @@ class CollisionGeometry
 	}//endFunction
 
 	/**
-	* given line L(o:pt,v:vect) returns its intersection on triangle T(a:pt,b:pt,c:pt)
+	* returns if line pt:(ox,oy,oz) vect:(vx,vy,vz) hits or is in the Bounding Box of this geometry
 	*/
-	public static function lineTriangleIntersection(lox:Number,loy:Number,loz:Number,
-													lvx:Number,lvy:Number,lvz:Number,
-													tax:Number,tay:Number,taz:Number,
-													tbx:Number,tby:Number,tbz:Number,
-													tcx:Number,tcy:Number,tcz:Number,
-													chkInTri:Boolean=true) : Vector3D
+	public function sphereHitsBounds(ox:Number,oy:Number,oz:Number,r:Number) : Boolean
 	{
-		var tpx:Number = tbx - tax;		// tri side vector from a to b
-		var tpy:Number = tby - tay;		// tri side vector from a to b
-		var tpz:Number = tbz - taz;		// tri side vector from a to b
+		if (ox<minXYZ.x && ox+r<minXYZ.x)	return false;
+		if (ox>maxXYZ.x && ox+r>maxXYZ.x)	return false;
 
-		var tqx:Number = tcx - tax;		// tri side vector from a to c
-		var tqy:Number = tcy - tay;		// tri side vector from a to c
-		var tqz:Number = tcz - taz;		// tri side vector from a to c
+		if (oy<minXYZ.y && oy+r<minXYZ.y)	return false;
+		if (oy>maxXYZ.y && oy+r>maxXYZ.y)	return false;
 
-		// normal by determinant Tn
-		var tnx:Number = tpy*tqz-tpz*tqy;	//	normal x for the triangle
-		var tny:Number = tpz*tqx-tpx*tqz;	//	normal y for the triangle
-		var tnz:Number = tpx*tqy-tpy*tqx;	//	normal z for the triangle
+		if (oz<minXYZ.z && oz+r<minXYZ.z)	return false;
+		if (oz>maxXYZ.z && oz+r>maxXYZ.z)	return false;
 
-		// let X be the intersection point, then equation of triangle plane Tn.(X-Ta) = 0
-		// but X = Lo+Lv*k   =>   Tn.(Lo+Lv*k-Ta) = 0    =>   Tn.Lv*k + Tn.(Lo-Ta) = 0
-		// k = (Ta-Lo).Tn/Lv.Tn
-		// denom!=0 => there is intersection in the plane of tri
+		if (ox>=minXYZ.x && ox<=maxXYZ.x &&		//point is in object bounds
+			oy>=minXYZ.y && oy<=maxXYZ.y &&
+			oz>=minXYZ.z && oz<=maxXYZ.z)		return true;
 
-		var denom:Number = lvx*tnx+lvy*tny+lvz*tnz;
-		if (denom==0)	return null;		// return no intersection or line in plane...
-
-		var num:Number = (tnx*(tax-lox) + tny*(tay-loy) + tnz*(taz-loz));
-		var k:Number = num/denom;
-		if (chkInTri && (k<0 || k>1)) return null;	// return no segment intersection
-
-		var ix:Number = lox+lvx*k - tax;	// vector to segment intersection on triangle plane
-		var iy:Number = loy+lvy*k - tay;	// vector to segment intersection on triangle plane
-		var iz:Number = loz+lvz*k - taz;	// vector to segment intersection on triangle plane
-
-		// find scalars along triangle sides P and Q s.t. sP+tQ = I
-		// s = (p.q)(w.q)-(q.q)(w.p)/(p.q)(p.q)-(p.p)(q.q)
-		// t = (p.q)(w.p)-(p.p)(w.q)/(p.q)(p.q)-(p.p)(q.q)
-		var p_p:Number = tpx*tpx+tpy*tpy+tpz*tpz;
-		var q_q:Number = tqx*tqx+tqy*tqy+tqz*tqz;
-		var p_q:Number = tpx*tqx+tpy*tqy+tpz*tqz;
-		var w_p:Number =  ix*tpx+ iy*tpy+ iz*tpz;
-		var w_q:Number =  ix*tqx+ iy*tqy+ iz*tqz;
-
-		denom = p_q*p_q - p_p*q_q;
-		var s:Number = (p_q*w_q - q_q*w_p)/denom;
-		var t:Number = (p_q*w_p - p_p*w_q)/denom;
-
-		if (chkInTri && (s<0 || t<0 || s+t>1)) return null;	// return intersection outside triangle
-
-		return new Vector3D(tax+s*tpx+t*tqx,	// return intersection point within tri
-							tay+s*tpy+t*tqy,	// return intersection point within tri
-							taz+s*tpz+t*tqz,1);	// return intersection point within tri
+		return _sphereHitsGeometry(ox,oy,oz,r,BoundingTris)!=null;
 	}//endfunction
+	
+	/**
+	* returns point where sphere pt:(ox,oy,oz) radius:r hits this geometry
+	* returns {vx,vy,vz, nx,ny,nz}	where (vx,vy,vz) is hit point and (nx,ny,nz) is triangle normal
+	*/
+	public function sphereHitsGeometry(ox:Number,oy:Number,oz:Number,r:Number) : VertexData
+	{
+		return _sphereHitsGeometry(ox,oy,oz,r);
+	}//endfunction
+	
+	/**
+	* returns point where sphere pt:(ox,oy,oz) radius:r hits this geometry
+	* returns {vx,vy,vz, nx,ny,nz}	where (vx,vy,vz) is hit point and (nx,ny,nz) is triangle normal
+	*/
+	private function _sphereHitsGeometry(ox:Number,oy:Number,oz:Number,r:Number,Tris:Vector.<TriData>=null) : VertexData
+	{
+		var hit:VertexData = null;
+		for (var i:int=Tris.length-1; i>=0; i--)
+		{
+			var tri:TriData = Tris[i];
+
+			// ----- chk sphere hits this triangle --------------------
+			var ax:Number = tri.ax;
+			var ay:Number = tri.ay;
+			var az:Number = tri.az;
+			var bx:Number = tri.bx;
+			var by:Number = tri.by;
+			var bz:Number = tri.bz;
+			var cx:Number = tri.cx;
+			var cy:Number = tri.cy;
+			var cz:Number = tri.cz;
+			var nx:Number = tri.nx;	//	normal x for the triangle
+			var ny:Number = tri.ny;	//	normal y for the triangle
+			var nz:Number = tri.nz;	//	normal z for the triangle
+
+			// let X be the intersection point, then equation of triangle plane Tn.(X-Ta) = 0
+			// but X = o+Tn*k   =>   Tn.(o+Tn*k-Ta) = 0    =>   Tn.Tn*k + Tn.(o-Ta) = 0
+			// k = (Ta-o).Tn/Tn.Tn
+			// but Tn.Tn == 1   =>  k = (Ta-o).Tn
+
+			var k:Number = (nx*(ax-ox) + ny*(ay-oy) + nz*(az-oz));
+			if (k>=0 && k<=r)	// if sphere intersects plane
+			{
+				var ix:Number = ox+nx*k - ax;		// vector to segment intersection on triangle plane
+				var iy:Number = oy+ny*k - ay;		// vector to segment intersection on triangle plane
+				var iz:Number = oz+nz*k - az;		// vector to segment intersection on triangle plane
+
+				var px:Number = bx - ax;		// tri side vector from a to b
+				var py:Number = by - ay;		// tri side vector from a to b
+				var pz:Number = bz - az;		// tri side vector from a to b
+
+				var qx:Number = cx - ax;		// tri side vector from a to c
+				var qy:Number = cy - ay;		// tri side vector from a to c
+				var qz:Number = cz - az;		// tri side vector from a to c
+
+				// find scalars along triangle sides P and Q s.t. sP+tQ = I
+				// s = (p.q)(w.q)-(q.q)(w.p)/(p.q)(p.q)-(p.p)(q.q)
+				// t = (p.q)(w.p)-(p.p)(w.q)/(p.q)(p.q)-(p.p)(q.q)
+				var p_p:Number = px*px+py*py+pz*pz;
+				var q_q:Number = qx*qx+qy*qy+qz*qz;
+				var p_q:Number = px*qx+py*qy+pz*qz;
+				var w_p:Number = ix*px+iy*py+iz*pz;
+				var w_q:Number = ix*qx+iy*qy+iz*qz;
+
+				var denom:Number = p_q*p_q - p_p*q_q;
+				var s:Number = (p_q*w_q - q_q*w_p)/denom;
+				var t:Number = (p_q*w_p - p_p*w_q)/denom;
+				
+				if (s < 0 || t<0 || s+t>1)		// if nearest point not within triangle 
+				{
+					ax -= ox;
+					ay -= oy;
+					az -= oz;
+					if (ax*ax+ay*ay+az*az<=r*r)	{r=Math.sqrt(ax*ax+ay*ay+az*az); hit=new VertexData(ax+ox,ay+oy,az+oz,nx,ny,nz);}
+					bx -= ox;
+					by -= oy;
+					bz -= oz;
+					if (bx*bx+by*by+bz*bz<=r*r)	{r=Math.sqrt(bx*bx+by*by+bz*bz); hit=new VertexData(bx+ox,by+oy,bz+oz,nx,ny,nz);}
+					cx -= ox;
+					cy -= oy;
+					cz -= oz;
+					if (cx*cx+cy*cy+cz*cz<=r*r)	{r=Math.sqrt(cx*cx+cy*cy+cz*cz); hit=new VertexData(cx+ox,cy+oy,cz+oz,nx,ny,nz);}
+				}
+				else
+				{
+					hit = new VertexData(ax+s*px+t*qx,	// return intersection point within tri
+										ay+s*py+t*qy,	// return intersection point within tri
+										az+s*pz+t*qz,	// return intersection point within tri
+										nx,ny,nz);		// triangle normal
+					r = Math.sqrt((hit.vx-ox)*(hit.vx-ox) + (hit.vy-oy)*(hit.vy-oy) + (hit.vz-oz)*(hit.vz-oz));
+				}
+			}// if sphere intersects plane
+		}//endfor
+
+		return hit;
+	}//endFunction
+	
 }//endclass
 
 /**
@@ -4404,15 +4469,20 @@ class CollisionGeometry
 */
 class TriData
 {
-	public var ax:Number;
+	public var ax:Number;		// tri vertex a
 	public var ay:Number;
 	public var az:Number;
-	public var bx:Number;
+	public var bx:Number;		// tri vertex b
 	public var by:Number;
 	public var bz:Number;
-	public var cx:Number;
+	public var cx:Number;		// tri vertex c
 	public var cy:Number;
 	public var cz:Number;
+	
+	public var nx:Number;		// normalized triangle normal, by determinant
+	public var ny:Number;
+	public var nz:Number;
+	
 
 	public function TriData(ax:Number,ay:Number,az:Number,
 							bx:Number,by:Number,bz:Number,
@@ -4427,6 +4497,23 @@ class TriData
 		this.cx = cx;
 		this.cy = cy;
 		this.cz = cz;
+		
+		var px:Number = bx - ax;		// tri side vector from a to b
+		var py:Number = by - ay;		// tri side vector from a to b
+		var pz:Number = bz - az;		// tri side vector from a to b
+
+		var qx:Number = cx - ax;		// tri side vector from a to c
+		var qy:Number = cy - ay;		// tri side vector from a to c
+		var qz:Number = cz - az;		// tri side vector from a to c
+
+		// normal by determinant Tn
+		nx = py*qz-pz*qy;				//	normal x for the triangle
+		ny = pz*qx-px*qz;				//	normal y for the triangle
+		nz = px*qy-py*qx;				//	normal z for the triangle
+		var nl:Number = Math.sqrt(nx * nx + ny * ny + nz * nz);
+		nx /= nl;
+		ny /= nl;
+		nz /= nl;
 	}//endConstructor
 
 	/**
@@ -4443,11 +4530,6 @@ class TriData
 		var qx:Number = cx - ax;		// tri side vector from a to c
 		var qy:Number = cy - ay;		// tri side vector from a to c
 		var qz:Number = cz - az;		// tri side vector from a to c
-
-		// normal by determinant Tn
-		var nx:Number = py*qz-pz*qy;	//	normal x for the triangle
-		var ny:Number = pz*qx-px*qz;	//	normal y for the triangle
-		var nz:Number = px*qy-py*qx;	//	normal z for the triangle
 
 		// let X be the intersection point, then equation of triangle plane Tn.(X-Ta) = 0
 		// but X = Lo+Lv*k   =>   Tn.(Lo+Lv*k-Ta) = 0    =>   Tn.Lv*k + Tn.(Lo-Ta) = 0
@@ -4486,26 +4568,6 @@ class TriData
 								nx,ny,nz);		// triangle normal
 	}//endfunction
 
-	/**
-	* returns the triangle normal
-	*/
-	public function normal() : Vector3D
-	{
-		var px:Number = bx - ax;		// tri side vector from a to b
-		var py:Number = by - ay;		// tri side vector from a to b
-		var pz:Number = bz - az;		// tri side vector from a to b
-
-		var qx:Number = cx - ax;		// tri side vector from a to c
-		var qy:Number = cy - ay;		// tri side vector from a to c
-		var qz:Number = cz - az;		// tri side vector from a to c
-
-		// normal by determinant Tn
-		var nx:Number = py*qz-pz*qy;	//	normal x for the triangle
-		var ny:Number = pz*qx-px*qz;	//	normal y for the triangle
-		var nz:Number = px*qy-py*qx;	//	normal z for the triangle
-
-		return new Vector3D(nx,ny,nz);
-	}//endfunction
 }//endclass
 
 /**

@@ -1016,7 +1016,7 @@
 		* return animation pose data given animId at given second, 
 		* if 2nd animation is named, interpolate between the 2 
 		*/
-		public function getAnimationPose(animId:String,secs:Number,animId2:String=null,secs2:Number=0,inter:Number=0.5) : Vector.<VertexData>
+		public function getAnimationPose(animId:String,secs:Number,R:Vector.<VertexData>=null) : Vector.<VertexData>
 		{
 			var frameData:Vector.<VertexData> = null;
 			
@@ -1034,20 +1034,7 @@
 			while (frameIdx<0) frameIdx += Frames.length;
 			var idx1:int=int(frameIdx)%Frames.length;
 			var idx2:int=(idx1+1)%Frames.length;
-			frameData = interpolateFrames(Frames[idx1],Frames[idx2],frameIdx-int(frameIdx));
-			
-			// ----- if animation 2 is named, interpolate between animations 1 and 2
-			if (animId2!=null && Animations.indexOf(animId2)!=-1)
-			{
-				frameRate = Animations[Animations.indexOf(animId2)+1];
-				Frames = Animations[Animations.indexOf(animId2)+2];
-				frameIdx = frameRate*secs2;
-				while (frameIdx<0) frameIdx += Frames.length;
-				idx1=int(frameIdx)%Frames.length;
-				idx2=(idx1+1)%Frames.length;
-				var frameData2:Vector.<VertexData> = interpolateFrames(Frames[idx1],Frames[idx2],frameIdx-int(frameIdx));
-				frameData = interpolateFrames(frameData,frameData2,Math.min(1,Math.max(0,inter)));
-			}
+			frameData = interpolateFrames(Frames[idx1],Frames[idx2],frameIdx-int(frameIdx),R);
 			
 			return frameData;
 		}//endfunction
@@ -1056,7 +1043,7 @@
 		* return animation pose data given animId at given animation frame, (requires less cpu than getAnimationPose)
 		* if 2nd animation is named, interpolate between the 2
 		*/
-		public function getAnimationFramePose(animId:String,frame:uint,animId2:String=null,frame2:uint=0,inter:Number=0.5) : Vector.<VertexData>
+		public function getAnimationFramePose(animId:String,frame:uint) : Vector.<VertexData>
 		{
 			var frameData:Vector.<VertexData> = null;
 			
@@ -1072,16 +1059,6 @@
 			frame = frame%Frames.length;
 			frameData = Frames[frame];
 			
-			// ----- if animation 2 is named, interpolate between animations 1 and 2
-			if (animId2!=null && Animations.indexOf(animId2)!=-1 && inter>0)
-			{
-				Frames = Animations[Animations.indexOf(animId2)+2];
-				frame2 = frame2%Frames.length;
-				var frameData2:Vector.<VertexData> = Frames[frame2];
-				frameData = interpolateFrames(frameData,frameData2,Math.min(1,Math.max(0,inter)),interpData);
-				interpData = frameData;
-			}
-			
 			return frameData;
 		}//endfunction
 		
@@ -1093,14 +1070,23 @@
 		*/
 		public function interpolateFrames(fD1:Vector.<VertexData>,fD2:Vector.<VertexData>,t:Number,R:Vector.<VertexData>=null) : Vector.<VertexData>
 		{
+			if (fD1 == null || fD2 == null)
+			{
+				Mesh.debugTrace("MD5Animae.interpolateFrames error! fD1:"+fD1+"  fD2:"+fD2);
+				if (fD1 == null && fD2 == null) return null;
+				else if (fD2 == null) 	fD2 = fD1;
+				else					fD1 = fD2;
+			}
+			if (fD1.length != fD2.length) Mesh.debugTrace("interpolateFrames error! fD1.length:"+fD1.length+" != fD2.length:"+fD2.length);
+			
 			t = Math.max(0,Math.min(1,t));
 			var i:int=0;
-			var n:uint = Math.min(fD1.length,fD2.length);
+			var n:uint = Math.min(fD1.length, fD2.length);
+			
 			if (R==null)
 			{
 				R = new Vector.<VertexData>();
-				for (i=0; i<n; i++)	R.push(new VertexData());
-				
+				for (i=0; i<n; i++)	R.push(new VertexData());		
 			}
 			for (i=0; i<n; i++)
 			{
