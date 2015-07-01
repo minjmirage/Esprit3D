@@ -29,13 +29,11 @@
 		
 		public var GPUSkinning:Boolean = false;		// GPU SKINNING FLAG
 		
-		public var md5Skins:Vector.<MD5Animae> = null;	// other skins to swap for same set of anims
+		private var md5Skins:Vector.<MD5Animae> = null;	// other skins to swap for same set of anims
 		
-		public static var debugTf:TextField = null;
-		
-		protected var BindPoseData:Array = null;	// [jointName,parentIdx,jointData, ...] where jointData: vx,vy,vz=position nx,ny,nz=quaternion, holds parent child relationship
-		protected var MeshesData:Array = null;		// [mT,mV,mW...]
-		protected var Animations:Array = null;		// [animId,frameRate,Frames,...]
+		private var BindPoseData:Array = null;		// [jointName,parentIdx,jointData, ...] where jointData: vx,vy,vz=position nx,ny,nz=quaternion, holds parent child relationship
+		private var MeshesData:Array = null;		// [mT,mV,mW...]
+		private var Animations:Array = null;		// [animId,frameRate,Frames,...]
 													// where frameData = [px,py,pz,xOrient,yOrient,zOrient,...] in bone order
 				
 		private var currentPoseData:Vector.<VertexData> = null;	// current pose data [{px,py,pz,xOrient,yOrient,zOrient},...] in bone order
@@ -618,7 +616,7 @@
 				{
 					var widx:int = mV[v+2];				// mW index
 					var nw:int = mV[v+3];				// number of weights
-					//if (debugTf!=null) debugTf.appendText("v="+v+" widx:"+widx+" nw:"+nw+"\n");
+					//Mesh.debugTrace("v="+v+" widx:"+widx+" nw:"+nw);
 					
 					if (nw>0)	// amazingly it occurs sometimes...
 					{
@@ -762,7 +760,7 @@
 					vd.u=mV[v+0]; vd.v=mV[v+1];		// set UV data
 				}//endfor each vertex
 								
-				if (debugTf!=null) debugTf.appendText("Tris="+mT.length/3+"  Vertices="+mV.length/4+"  Weights="+mW.length);
+				Mesh.debugTrace("Tris="+mT.length/3+"  Vertices="+mV.length/4+"  Weights="+mW.length);
 				
 				// ----- write out data in [vx,vy,vz,nx,ny,nz,tx,ty,tz,u,v, ....] format in original vertices order
 				var V:Vector.<Number> = M[m/3].vertData;	// reusing mesh vector...	
@@ -778,10 +776,10 @@
 					V[idx++]=vt.u;	V[idx++]=vt.v;
 				}//endfor each triangle
 				
-				if (debugTf!=null) debugTf.appendText("  OUTPUT : V.length="+V.length+" mT.length="+mT.length+"\n");
+				Mesh.debugTrace("  OUTPUT : V.length="+V.length+" mT.length="+mT.length+"\n");
 				M[m/3].setGeometry(V,mT,true);		// pass vertices and indices data directly to mesh
 			}//endfor each mesh						// so as not to duplicate vertices 3x
-			if (debugTf!=null) debugTf.appendText("TimeLapsed = "+(getTimer()-timee)+"***\n");
+			Mesh.debugTrace("TimeLapsed = "+(getTimer()-timee)+"***\n");
 			return skin;
 		}//endfunction
 		
@@ -826,8 +824,7 @@
 			}//endfor
 			bl/=bc;
 			
-			if (debugTf!=null)
-				debugTf.appendText("n="+n+"   boneTrace.childMeshes.length="+boneTrace.childMeshes.length+"\n");
+			Mesh.debugTrace("generateSkeletonPose n="+n+"   boneTrace.childMeshes.length="+boneTrace.childMeshes.length+"\n");
 			// ----- shift joints to current pose -------------------
 			for (i=0; i<n; i++)
 			{
@@ -1311,7 +1308,6 @@
 		{
 			var i:int=0;
 			var n:uint = BindPoseData.length/3;
-			var nrm:Vector3D = null;
 			if (n==0) return;
 			
 			// ----- determine joint transform and inverse --------------------
@@ -1327,7 +1323,6 @@
 			// ----- shift vertices matching boneId for each submesh ----------
 			for (var m:int=MeshesData.length-3; m>=0; m-=3)
 			{
-				var mV:Vector.<Number> = MeshesData[m+1];
 				var mW:Vector.<VertexData> = MeshesData[m+2];
 				var nwn:int = mW.length;
 				for (i=0; i<nwn; i++)		// for each weight
@@ -1649,12 +1644,12 @@
 			var BindPoseData:Array = parseBindPose(o.seg);
 			s = o.s;
 			
-			//if (debugTf!=null) debugTf.appendText("o.s="+o.s);
+			//Mesh.debugTrace("o.s="+o.s);
 			
 			var MeshesData:Array = [];
 			while (s.indexOf("mesh")!=-1)
 			{
-				//if (debugTf!=null) debugTf.appendText("s="+s+"\n");
+				//Mesh.debugTrace("s="+s);
 				o = removeDataSeg(s,"mesh");
 				s = o.s;
 				o = parseWeights(o.seg);		// parse MD5 mesh data
