@@ -4484,18 +4484,50 @@ class CollisionGeometry
 					
 					if (s < 0 || t<0 || s+t>1)		// if nearest point not within triangle 
 					{
-						ax -= ox;
-						ay -= oy;
-						az -= oz;
-						if (ax*ax+ay*ay+az*az<=r*r)	{r=Math.sqrt(ax*ax+ay*ay+az*az); hit=new Vector3D(ax+ox,ay+oy,az+oz);}
-						bx -= ox;
-						by -= oy;
-						bz -= oz;
-						if (bx*bx+by*by+bz*bz<=r*r)	{r=Math.sqrt(bx*bx+by*by+bz*bz); hit=new Vector3D(bx+ox,by+oy,bz+oz);}
-						cx -= ox;
-						cy -= oy;
-						cz -= oz;
-						if (cx*cx+cy*cy+cz*cz<=r*r)	{r=Math.sqrt(cx*cx+cy*cy+cz*cz); hit=new Vector3D(cx+ox,cy+oy,cz+oz);}
+						px = bx - ax;				// vect a to b
+						py = by - ay;
+						pz = bz - az;
+						k = px*px+py*py+pz*pz;		// len Sqr from a to b
+						qx = ox - ax;				// vect a to o
+						qy = oy - ay;
+						qz = oz - az;
+						t = (px*qx+py*qy+pz*qz)/k;	// proj on a to b
+						if (t < 0) t = 0;
+						if (t > 1) t = 1;
+						px = ax + px*t - ox;		// nearest pt on seg a to b
+						py = ay + py*t - oy;
+						pz = az + pz*t - oz;
+						if (px*px+py*py+pz*pz<=r*r)	{r=Math.sqrt(px*px+py*py+pz*pz); hit=new Vector3D(px+ox,py+oy,pz+oz);}
+						
+						px = cx - bx;				// vect b to c
+						py = cy - by;
+						pz = cz - bz;
+						k = px*px+py*py+pz*pz;		// len Sqr from b to c
+						qx = ox - bx;				// vect b to o
+						qy = oy - by;
+						qz = oz - bz;
+						t = (px*qx+py*qy+pz*qz)/k;	// proj on b to c
+						if (t < 0) t = 0;
+						if (t > 1) t = 1;
+						px = bx + px*t - ox;		// nearest pt on seg a to b
+						py = by + py*t - oy;
+						pz = bz + pz*t - oz;
+						if (px*px+py*py+pz*pz<=r*r)	{r=Math.sqrt(px*px+py*py+pz*pz); hit=new Vector3D(px+ox,py+oy,pz+oz);}
+						
+						px = ax - cx;				// vect c to a
+						py = ay - cy;
+						pz = az - cz;
+						k = px*px+py*py+pz*pz;		// len Sqr from c to a
+						qx = ox - cx;				// vect c to o
+						qy = oy - cy;
+						qz = oz - cz;
+						t = (px*qx+py*qy+pz*qz)/k;	// proj on b to c
+						if (t < 0) t = 0;
+						if (t > 1) t = 1;
+						px = cx + px*t - ox;		// nearest pt on seg c to a
+						py = cy + py*t - oy;
+						pz = cz + pz*t - oz;
+						if (px*px+py*py+pz*pz<=r*r)	{r=Math.sqrt(px*px+py*py+pz*pz); hit=new Vector3D(px+ox,py+oy,pz+oz);}
 					}
 					else
 					{
