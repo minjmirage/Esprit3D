@@ -4397,14 +4397,14 @@ class CollisionGeometry
 	*/
 	public function sphereHitsBounds(ox:Number,oy:Number,oz:Number,r:Number) : Boolean
 	{
-		if (ox<minXYZ.x && ox+r<minXYZ.x)	return false;
-		if (ox>maxXYZ.x && ox+r>maxXYZ.x)	return false;
+		if (ox+r<minXYZ.x)	return false;
+		if (ox-r>maxXYZ.x)	return false;
 
-		if (oy<minXYZ.y && oy+r<minXYZ.y)	return false;
-		if (oy>maxXYZ.y && oy+r>maxXYZ.y)	return false;
+		if (oy+r<minXYZ.y)	return false;
+		if (oy-r>maxXYZ.y)	return false;
 
-		if (oz<minXYZ.z && oz+r<minXYZ.z)	return false;
-		if (oz>maxXYZ.z && oz+r>maxXYZ.z)	return false;
+		if (oz+r<minXYZ.z)	return false;
+		if (oz-r>maxXYZ.z)	return false;
 
 		if (ox>=minXYZ.x && ox<=maxXYZ.x &&		//point is in object bounds
 			oy>=minXYZ.y && oy<=maxXYZ.y &&
