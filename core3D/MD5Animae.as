@@ -60,14 +60,9 @@
 			
 			// precreate number of Mesh equal to number if submeshes in model
 			M = new Vector.<Mesh>();
-			var defaTex:BitmapData = new BitmapData(1,1,true,0xAAFFFFFF);
 			while (M.length<=MeshesData.length/3)
 			{
 				M.push(new Mesh());
-				//M[M.length-1].transform = new Matrix4x4().translate((M.length-1)*10,0,0);	// debug
-				M[M.length-1].setTexture(defaTex);
-				M[M.length-1].setAmbient(0.3,0.3,0.3);
-				M[M.length-1].setSpecular(0.1);
 				skin.addChild(M[M.length-1]);
 			}
 			
@@ -1546,7 +1541,7 @@
 			{
 				trace("loaded texture:"+ldr.content);	
 				var bmp:Bitmap = (Bitmap)(ldr.content); 
-				skin.setTexture(bmp.bitmapData,true);
+				skin.material.setTexMap(bmp.bitmapData);
 				if (callBack!=null) callBack(bmp.bitmapData); 
 			}
 				try {ldr.load(new URLRequest(url));}	catch (error:SecurityError)	

@@ -70,11 +70,11 @@
 			skin = new Mesh();
 			skin.castsShadow=false;
 			skin.enableLighting(false);
-			skin.setAmbient(1,1,1);
-			skin.setSpecular(0);
+			skin.material.setAmbient(1,1,1);
+			skin.material.setSpecular(0, 0.5);
+			skin.material.setTexMap(spriteSheet);
+			skin.material.setBlendMode(blend);
 			skin.setParticles(V,I);
-			skin.setTexture(spriteSheet);
-			skin.setBlendMode(blend);
 		}//endfunction
 		
 		/**

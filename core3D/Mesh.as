@@ -46,27 +46,22 @@
 		public var useMipMapping:Boolean = false;		// specifies whether to use mipmapping to render this mesh
 		public var workingTransform:Matrix4x4;			// calculated global transform for this mesh during rendering
 
+		public var material:Material;					// contains {ambR,ambG,ambB,specStr,specHard,fogR,fogG,fogB,fogFar}
+
 		private var collisionGeom:CollisionGeometry;	// for detecting collision on this mesh geometry
 		private var illuminable:Boolean = true;			// specifies if this mesh can be illuminated with directional lights
-		private var material:Material;					// contains {ambR,ambG,ambB,specStr,specHard,fogR,fogG,fogB,fogFar}
-
+		
 		public var trisCnt:int;							// number of triangles to tell program to draw
-		private var texture:BitmapData;					// texture of current mesh, can be null
-		private var normMap:BitmapData;					// combined normal map of current mesh, can be null
-		private var specMap:BitmapData;					// combined speclar map of current mesh, can be null
 		private var vertexBuffer:VertexBuffer3D;		// Where Vertex positions for this mesh will be stored
 		private var indexBuffer:IndexBuffer3D;			// Order of Vertices to be drawn for this mesh
 		private var textureBuffer:Texture;				// uploaded Texture of this mesh
 		private var normMapBuffer:Texture;				// uploaded normal map of this mesh
 		private var specMapBuffer:Texture;				// uploaded specular map of this mesh
-		private var envMapBuffer:CubeTexture;			// uploaded env map of this mesh
 		private var stdProgram:Program3D;				// rendering program specific for this mesh
 		private var depthProgram:Program3D;				// program for rendering depth maps for shadow mapping
 
 		public var depthWrite:Boolean=true;				// whether to write to depth buffer
-		private var blendSrc:String="one";				// source pixel blend mode
-		private var blendDest:String="zero";			// destination pixel blend mode
-
+		
 		private var dataType:int = -1;					// empty mesh type is -1
 		private var builtOnState:uint = 0;				// must match global stateId for shader program to be guaranteed valid
 
@@ -120,9 +115,6 @@
 			childMeshes = new Vector.<Mesh>();	// child meshes list
 			transform = new Matrix4x4();
 			material = new Material();
-			setAmbient(0.3, 0.3, 0.3);			// R,G,B
-			setSpecular(0,5);					// strength,hardness
-			setFog();
 		}//endconstructor
 
 		/**
@@ -140,15 +132,11 @@
 			m.idxsData = idxsData;
 			m.jointsData = jointsData;
 			m.collisionGeom = collisionGeom;	// pass collision geometry over!
-			m.texture = texture;
-			m.normMap = normMap;
-			m.specMap = specMap;
 			m.material = material.clone();
 			m.vertexBuffer = vertexBuffer;
 			m.indexBuffer = indexBuffer;
 			m.textureBuffer = textureBuffer;
 			m.normMapBuffer = normMapBuffer;
-			m.envMapBuffer = envMapBuffer;
 			m.stdProgram = stdProgram;
 			m.depthProgram = depthProgram;
 			m.illuminable = illuminable;
@@ -235,15 +223,12 @@
 				idxOff = nV.length/11;
 			}
 
-			var tex:BitmapData = this.texture;
-			var norm:BitmapData = this.normMap;
-			var spec:BitmapData = this.specMap;
 			for (var i:int=childMeshes.length-1; i>-1; i--)
 			{
 				var c:Mesh = childMeshes[i].mergeTree();
-				if (tex==null)	tex = c.texture;
-				if (norm==null)	norm = c.normMap;
-				if (spec==null)	spec = c.specMap;
+				if (material.texMap==null)	material.texMap = c.material.texMap;
+				if (material.normMap==null)	material.normMap = c.material.normMap;
+				if (material.specMap==null)	material.specMap = c.material.specMap;
 				var cT:Matrix4x4 = c.transform;
 				var vD:Vector.<Number> = c.vertData;
 				var iD:Vector.<uint> = c.idxsData;
@@ -288,9 +273,6 @@
 			m.material = material.clone();
 			m.transform = transform;
 			m.setGeometry(nV,nI);
-			m.texture = tex;
-			m.normMap = norm;
-			m.specMap = spec;
 			return m;
 		}//endfunction
 
@@ -689,65 +671,23 @@
 		}//endfunction
 
 		/**
+		 * sets given material to self and all its children
+		 */
+		public function setMaterialToTree(mat:Material):void
+		{
+			if (mat == null) return;
+			material = mat;
+			
+			for (var i:int = childMeshes.length - 1; i > -1; i--)
+				childMeshes[i].setMaterialToTree(mat);
+		}//endfunction
+		
+		/**
 		* returns the datatype for this mesh
 		*/
 		public function getDataType() : uint
 		{
 			return dataType;
-		}//endfunction
-
-		/**
-		* sets/overrides new texture to this mesh
-		*/
-		public function setTexture(bmd:BitmapData,propagate:Boolean=false,update:Boolean=false) : void
-		{
-			if ((texture==null && bmd!=null) || (texture!=null && bmd==null))
-			{
-				stdProgram=null;
-			}
-			texture = powOf2Size(bmd);
-			textureBuffer = uploadTextureBuffer(texture,update,true);
-			if (blendSrc=="sourceAlpha" && blendDest=="one") {}
-			else if (texture!=null && texture.transparent)	setBlendMode("alpha");
-			else											setBlendMode("normal");
-
-			if (propagate)
-			for (var i:int=childMeshes.length-1; i>-1; i--)
-				childMeshes[i].setTexture(bmd,propagate,update);
-		}//endfunction
-
-		/**
-		* sets/overrides new normal map to this mesh
-		*/
-		public function setNormalMap(bmd:BitmapData,propagate:Boolean=false,update:Boolean=false) : void
-		{
-			if ((normMap==null && bmd!=null) || (normMap!=null && bmd==null))
-			{
-				stdProgram=null;
-			}
-			normMap = powOf2Size(bmd);
-			normMapBuffer = uploadTextureBuffer(normMap,update,true);
-
-			if (propagate)
-			for (var i:int=childMeshes.length-1; i>-1; i--)
-				childMeshes[i].setNormalMap(bmd,propagate,update);
-		}//endfunction
-
-		/**
-		* sets/overrides new specular map to this mesh
-		*/
-		public function setSpecularMap(bmd:BitmapData,propagate:Boolean=false,update:Boolean=false) : void
-		{
-			if ((specMap==null && bmd!=null) || (specMap!=null && bmd==null))
-			{
-				stdProgram=null;
-			}
-			specMap = powOf2Size(bmd);
-			specMapBuffer = uploadTextureBuffer(specMap,update,true);
-
-			if (propagate)
-			for (var i:int=childMeshes.length-1; i>-1; i--)
-				childMeshes[i].setSpecularMap(bmd,propagate,update);
 		}//endfunction
 
 		/**
@@ -757,43 +697,12 @@
 		{
 			if (context3d==null) return null;
 
-			var eM:CubeTexture=envMapBuffer;
+			var eM:CubeTexture=material.envMap;
 			if (eM==null) eM=context3d.createCubeTexture(size,"bgra",true);
 			var parentM:Mesh = world.removeChild(this);		// exclude from render!
 			renderEnvCubeTex(stage,world,eM,transform.ad,transform.bd,transform.cd);
 			if (parentM!=null) parentM.addChild(this);
 			return eM;
-		}//endfunction
-
-		/**
-		* sets up the environment map for this mesh... so it is reflecting mirror like
-		*/
-		public function setEnvMap(eM:CubeTexture,propagate:Boolean=false) : void
-		{
-			if (envMapBuffer==null)
-			{
-				stdProgram=null;
-			}
-			envMapBuffer = eM;
-
-			for (var i:int=childMeshes.length-1; i>-1; i--)
-				childMeshes[i].setEnvMap(eM,propagate);
-		}//endfunction
-
-		/**
-		* clears off environment map for this mesh...
-		*/
-		public function clearEnvMap(propagate:Boolean=false) : void
-		{
-			if (envMapBuffer!=null)
-			{
-				stdProgram=null;
-			}
-			envMapBuffer = null;
-
-			if (propagate)
-			for (var i:int=childMeshes.length-1; i>-1; i--)
-				childMeshes[i].clearEnvMap(propagate);
 		}//endfunction
 
 		/**
@@ -844,81 +753,12 @@
 		}//endfunction
 
 		/**
-		* sets the ambient parameters for this mesh only, if propagate, child meshes too
-		*/
-		public function setAmbient(red:Number=0.5,green:Number=0.5,blue:Number=0.5,propagate:Boolean=false) : void
-		{
-			if ((material.ambR==1 && material.ambG==1 && material.ambB==1) ||
-				(red==1 && green==1 && blue==1))
-			{
-				stdProgram=null;
-			}
-			material.ambR = red;
-			material.ambG = green;
-			material.ambB = blue;
-
-			if (propagate)
-			for (var i:int=childMeshes.length-1; i>-1; i--)
-				childMeshes[i].setAmbient(red,green,blue,propagate);
-		}//endfunction
-
-		/**
-		 * sets the specular parameters for this mesh only, if propagate, child meshes too
-		 */
-		public function setSpecular(strength:Number=0.5,hardness:uint=5,propagate:Boolean=false) : void
-		{
-			if ((material.specStr==0) || strength==0)
-			{
-				stdProgram=null;
-			}
-			material.specStr = strength;
-			material.specHard = hardness;
-
-			if (propagate)
-			for (var i:int=childMeshes.length-1; i>-1; i--)
-				childMeshes[i].setSpecular(strength,hardness,propagate);
-		}//endfunction
-
-		/**
-		* sets the linear fog parameters for this mesh, fogDist is dist where objects are totally covered by fog, if propagate, child meshes too
-		*/
-		public function setFog(red:Number=0.5,green:Number=0.5,blue:Number=0.5,fogDist:Number=0,propagate:Boolean=false) : void
-		{
-			if (fogDist!=material.fogFar)
-			{
-				stdProgram=null;
-			}
-			material.fogR = red;
-			material.fogG = green;
-			material.fogB = blue;
-			material.fogFar = fogDist;
-
-			if (propagate)
-			for (var i:int=childMeshes.length-1; i>-1; i--)
-				childMeshes[i].setFog(red,green,blue,fogDist,propagate);
-		}//endfunction
-
-		/**
-		* blending when drawing to stage, one of "add", "alpha", "normal"
-		*/
-		public function setBlendMode(s:String,propagate:Boolean=false) : void
-		{
-			s = s.toLowerCase();
-			if (s=="add")		{blendSrc="sourceAlpha"; blendDest="one";}
-			if (s=="alpha")		{blendSrc="sourceAlpha"; blendDest="oneMinusSourceAlpha";}
-			if (s=="normal")	{blendSrc="one"; blendDest="zero";}
-
-			if (propagate)
-			for (var i:int=childMeshes.length-1; i>-1; i--)
-				childMeshes[i].setBlendMode(s,propagate);
-		}//endfunction
-
-		/**
 		* refreshes/sets data buffers and build and upload rendering programs of this mesh
 		*/
 		private function setContext3DBuffers(shadows:Boolean) : void
 		{
-			if (context3d==null)	return;
+			if (context3d == null)	return;
+			debugTrace("setContext3DBuffers");
 
 			// ----- upload geometry data ---------------------------
 			if (vertexBuffer==null || indexBuffer==null)
@@ -930,9 +770,9 @@
 			}
 
 			// ----- upload texture and specmap ---------------------
-			textureBuffer = uploadTextureBuffer(texture,false,true);	// no update upload mips
-			normMapBuffer = uploadTextureBuffer(normMap,false,true);	// no update upload mips
-			specMapBuffer = uploadTextureBuffer(specMap,false,true);	// no update upload mips
+			textureBuffer = uploadTextureBuffer(material.texMap,false,true);	// no update upload mips
+			normMapBuffer = uploadTextureBuffer(material.normMap,false,true);	// no update upload mips
+			specMapBuffer = uploadTextureBuffer(material.specMap,false,true);	// no update upload mips
 
 			// ----- create mesh custom shader program --------------
 			if (lightsConst==null)	lightsConst = Vector.<Number>();
@@ -940,17 +780,24 @@
 			if (dataType==_typeP)	illuminable=false;	// no lighting for particles
 			if (illuminable==false)	numLights=0;
 
-			var vertSrc:String = _stdPersVertSrc(numLights>0,material.fogFar>0,normMap!=null);
-			if (dataType==_typeV)		vertSrc = _stdReadVertSrc(numLights>0,normMap!=null) + vertSrc;
+			var vertSrc:String = _stdPersVertSrc(numLights>0,material.fogFar>0,material.normMap!=null);
+			if (dataType==_typeV)		vertSrc = _stdReadVertSrc(numLights>0,material.normMap!=null) + vertSrc;
 			else if (dataType==_typeP)	vertSrc = _particlesVertSrc() + vertSrc;
-			else if (dataType==_typeM)	vertSrc = _meshesVertSrc(numLights>0,normMap!=null) + vertSrc;
+			else if (dataType==_typeM)	vertSrc = _meshesVertSrc(numLights>0,material.normMap!=null) + vertSrc;
 			else if (dataType==_typeS)	vertSrc = _skinningVertSrc(numLights>0) + vertSrc;
 
 			var fragSrc:String = null;
-			if (texture!=null && numLights==0 && material.ambR==1 && material.ambG==1 && material.ambB==1 && material.specStr==0 && material.fogFar==0)
+			if (material.texMap!=null && numLights==0 && material.ambR==1 && material.ambG==1 && material.ambB==1 && material.specStr==0 && material.fogFar==0)
 				fragSrc = "tex oc, v2, fs0 <2d,linear,mipnone,repeat>\n";
 			else
-				fragSrc = _stdFragSrc(numLights,texture!=null,useMipMapping,normMap!=null,specMap!=null,material.fogFar>0,envMapBuffer!=null,shadows);
+				fragSrc = _stdFragSrc(	numLights,
+										material.texMap != null,
+										useMipMapping,
+										material.normMap != null,
+										material.specMap != null,
+										material.fogFar > 0,
+										material.envMap != null,
+										shadows);
 
 			stdProgram = createProgram(vertSrc,fragSrc);
 			builtOnState = stateId;
@@ -1537,6 +1384,12 @@
 		*/
 		private static function _renderBranch(M:Mesh,shadows:Boolean=false):void
 		{
+			if (renderedWithShadows != shadows) 
+			{
+				stateId++; 		// triggers shader recompile
+				renderedWithShadows = shadows;
+			}
+			
 			if (lightsConst==null)	setPointLighting(Vector.<Number>([0,focalL*10,0,  1.0,1.0,1.0]));	// light points
 			var n:uint = lightsConst.length/8;	// number of lights
 
@@ -1566,32 +1419,37 @@
 
 			// ----- get list of meshes to be rendered -----------------------
 			var R:Vector.<Mesh> = new Vector.<Mesh>();
-			M.flattenTree(new Matrix4x4(),R);
+			M.flattenTree(viewT,R);
 			R = R.sort(depthCompare);
-
+			
 			var rlen:uint = R.length;
 			numMeshes = rlen;
 			for (var i:int=0; i<rlen; i++)
 			{
 				M = R[i];
-
+				var mat:Material = M.material;
+				if (mat.changed!=0 || M.builtOnState!=stateId) 	
+				{
+					M.stdProgram = null; 	// force this mesh shader prog rebuild
+					mat.changed=0;	
+				}
+				
 				// ----- prep for render if mesh is not yet prep
 				if (M.dataType<0)	{/*type empty mesh*/}
 				else
 				{
-					if (renderedWithShadows != shadows) {stateId++; renderedWithShadows = shadows;}
-					if (M.stdProgram==null || M.builtOnState!=stateId) M.setContext3DBuffers(shadows); // build shader prog if incorrect
+					if (M.stdProgram==null) 	M.setContext3DBuffers(shadows); // build shader prog if incorrect
 
 					if (M.dataType==_typeV || M.jointsData!=null)	// if plain geometry or joints data is valid
 					{
-						var T:Matrix4x4 = viewT.mult(M.workingTransform);		// transform for current mesh to be rendered
+						var T:Matrix4x4 = M.workingTransform;		// transform for current mesh to be rendered
 						// ----- set transform parameters for this mesh to context3d ----
 						context3d.setProgramConstantsFromVector("vertex", 1, Vector.<Number>([T.aa,T.ab,T.ac,T.ad,T.ba,T.bb,T.bc,T.bd,T.ca,T.cb,T.cc,T.cd,0,0,0,1]));	// set vc register 1,2,3,4
 
 						// ----- ambient, specular, fog factors for this mesh -----------
-						context3d.setProgramConstantsFromVector("fragment", 1, Vector.<Number>([M.material.ambR, M.material.ambG, M.material.ambB,0]));					// r,g,b,0
-						context3d.setProgramConstantsFromVector("fragment", 2, Vector.<Number>([M.material.specStr,M.material.specHard+1,M.material.specHard, 0]));	// st,h1,h0,0
-						context3d.setProgramConstantsFromVector("fragment", 3, Vector.<Number>([M.material.fogR,M.material.fogG,M.material.fogB,M.material.fogFar]));	//
+						context3d.setProgramConstantsFromVector("fragment", 1, Vector.<Number>([mat.ambR, mat.ambG, mat.ambB,0]));					// r,g,b,0
+						context3d.setProgramConstantsFromVector("fragment", 2, Vector.<Number>([mat.specStr,mat.specHard+1,mat.specHard, 0]));	// st,h1,h0,0
+						context3d.setProgramConstantsFromVector("fragment", 3, Vector.<Number>([mat.fogR,mat.fogG,mat.fogB,mat.fogFar]));	//
 
 						// ----- clear off prev used buffers
 						for (j=0; j<7; j++)	context3d.setVertexBufferAt(j, null);
@@ -1654,7 +1512,7 @@
 						var specBuff:Texture=null;
 						if (n>0 && M.illuminable)
 						{
-							envBuff=M.envMapBuffer;
+							envBuff=mat.envMap;
 							normBuff=M.normMapBuffer;
 							specBuff=M.specMapBuffer;
 						}
@@ -1674,7 +1532,7 @@
 
 						// ----- enable alpha blending if transparent texture -----------
 						context3d.setDepthTest(M.depthWrite,"greater");			// whether to write to depth buffer
-						context3d.setBlendFactors(M.blendSrc,M.blendDest);		// set to specified blending
+						context3d.setBlendFactors(mat.blendSrc,mat.blendDest);	// set to specified blending
 
 						// ----- draw our triangles to screen ---------------------------
 						context3d.drawTriangles(M.indexBuffer, 0,M.trisCnt);
@@ -1914,16 +1772,26 @@
 		*/
 		private static function depthCompare(meshA:Mesh,meshB:Mesh) : int
 		{
-			var dA:int = int.MAX_VALUE;	//  weird
-			var dB:int = int.MAX_VALUE;	// why???
-			if (meshA.blendSrc!="one")
+			var ta:Matrix4x4 = meshA.workingTransform;
+			var tb:Matrix4x4 = meshB.workingTransform;
+			
+			if (meshA.material.blendSrc=="one" && meshB.material.blendSrc=="one")
+			{	// if opaque objects, draw the one in front first
+				if (ta.cd > tb.cd)
+					return 1;
+				else
+					return -1;
+			}
+			
+			var dA:int = int.MAX_VALUE;
+			var dB:int = int.MAX_VALUE;
+			
+			if (meshA.material.blendSrc!="one")
 			{
-				var ta:Matrix4x4 = meshA.workingTransform;
 				dA = ta.cd;		// compare z
 			}
-			if (meshB.blendSrc!="one")
+			if (meshB.material.blendSrc!="one")
 			{
-				var tb:Matrix4x4 = meshB.workingTransform;
 				dB = tb.cd;		// compare z
 			}
 			if (dB>dA)
@@ -1971,10 +1839,10 @@
 				i++;
 			}//endfor
 
-			var M:Mesh = new Mesh();
-			M.createGeometry(S);
-			M.setTexture(tex);
-			return M;
+			var m:Mesh = new Mesh();
+			m.createGeometry(S);
+			m.material.setTexMap(tex);
+			return m;
 		}//endfunction
 
 		/**
@@ -2018,10 +1886,10 @@
 				i++;
 			}//endfunction
 
-			var M:Mesh = new Mesh();
-			M.createGeometry(T);
-			M.setTexture(tex);
-			return M;
+			var s:Mesh = new Mesh();
+			s.createGeometry(T);
+			s.material.setTexMap(tex);
+			return s;
 		}//endfunction
 
 		/**
@@ -2031,7 +1899,7 @@
 		{
 			var m:Mesh = new Mesh();
 			m.createGeometry(createTrianglesBand(r1,r2,z1,z2,n,soft));
-			m.setTexture(tex);
+			m.material.setTexMap(tex);
 			return m;
 		}//endfunction
 
@@ -2052,7 +1920,7 @@
 			while (v2.length>0)	v1.push(v2.shift());
 			var m:Mesh = new Mesh();
 			m.createGeometry(v1);
-			m.setTexture(tex);
+			m.material.setTexMap(tex);
 			return m;
 		}//endfunction
 
@@ -2174,7 +2042,7 @@
 
 			var m:Mesh = new Mesh();
 			m.createGeometry(VData);
-			m.setTexture(tex);
+			m.material.setTexMap(tex);
 			return m;
 		}//endfunction
 
@@ -2289,7 +2157,7 @@
 			}
 			var m:Mesh = new Mesh();
 			m.createGeometry(VData);
-			m.setTexture(tex);
+			m.material.setTexMap(tex);
 			return m;
 		}//endfunction
 
@@ -2319,7 +2187,7 @@
 						1,0);			// br UV
 			var m:Mesh = new Mesh();
 			m.createGeometry(VData);
-			m.setTexture(tex);
+			m.material.setTexMap(tex);
 			return m;
 		}//endfunction
 
@@ -2351,12 +2219,13 @@
 		}//endfunction
 
 		/**
-		* generates a terrain mesh from given height map data with specified channel max 128*128
+		* generates a terrain mesh from given height map data with rgb combined as height, width*height<=65535
 		*/
-		public static function createHeightMap(map:BitmapData,f:Number=1,channel:uint=0,tex:BitmapData=null) : Mesh
+		public static function createHeightMap(map:BitmapData,f:Number=1,tex:BitmapData=null) : Mesh
 		{
-			channel = Math.min(3,channel);
-
+			if (map.width * map.height > 65535)
+				debugTrace("Error : Mesh.createHeightMap (map.width*map.height) > 65535");
+			
 			// ----- generate vertices data -------------------------
 			var V:Vector.<Number> = new Vector.<Number>();
 			var w:int =map.width;
@@ -2364,8 +2233,8 @@
 			for (var x:int=0; x<w; x++)
 				for (var y:int=0; y<h; y++)
 				{
-					var th:Number = ((map.getPixel(x,y)>>(channel*8))&0xFF)/255 - 0.5;	// terrain height at point
-					V.push(	x/(w-1)-0.5,th*f,y/(h-1)-0.5,			// vertex
+					var th:Number = map.getPixel(x,y)/16777216 - 0.5;	// terrain height at point
+					V.push(	x/(w-1)-0.5,th*f,y/(h-1)-0.5,		// vertex
 							0,0,0,								// normal
 							x/(w-1),y/(h-1));					// uv
 				}
@@ -2380,18 +2249,20 @@
 				}
 
 			// ----- calculate normals ------------------------------
-			var N:Vector.<Vector3D> = new Vector.<Vector3D>(V.length/8);
 			for (var i:int=0; i<I.length; i+=3)
 			{
-				var ax:Number = V[I[i+0]*8+0];
-				var ay:Number = V[I[i+0]*8+1];
-				var az:Number = V[I[i+0]*8+2];
-				var bx:Number = V[I[i+1]*8+0];
-				var by:Number = V[I[i+1]*8+1];
-				var bz:Number = V[I[i+1]*8+2];
-				var cx:Number = V[I[i+2]*8+0];
-				var cy:Number = V[I[i+2]*8+1];
-				var cz:Number = V[I[i+2]*8+2];
+				var idx1:int = I[i+0]*8;
+				var idx2:int = I[i+1]*8;
+				var idx3:int = I[i+2]*8;
+				var ax:Number = V[idx1+0];
+				var ay:Number = V[idx1+1];
+				var az:Number = V[idx1+2];
+				var bx:Number = V[idx2+0];
+				var by:Number = V[idx2+1];
+				var bz:Number = V[idx2+2];
+				var cx:Number = V[idx3+0];
+				var cy:Number = V[idx3+1];
+				var cz:Number = V[idx3+2];
 				// ----- calculate default normals ------------------------
 				var px:Number = bx - ax;
 				var py:Number = by - ay;
@@ -2399,38 +2270,37 @@
 				var qx:Number = cx - ax;
 				var qy:Number = cy - ay;
 				var qz:Number = cz - az;
-				// ----- normal by determinant
+				// ----- normal by cross product
 				var nx:Number = py*qz-pz*qy;	//	unit normal x for the triangle
 				var ny:Number = pz*qx-px*qz;	//	unit normal y for the triangle
 				var nz:Number = px*qy-py*qx;	//	unit normal z for the triangle
-				var nl:Number = Math.sqrt(nx*nx+ny*ny+nz*nz);
-				nx/=nl; ny/=nl; nz/=nl;
-				for (var j:int=0; j<3; j++)
-				{
-					if (N[I[i+j]]==null)
-						N[I[i+j]] = new Vector3D(nx,ny,nz);
-					else
-					{
-						N[I[i+j]].x += nx;
-						N[I[i+j]].y += ny;
-						N[I[i+j]].z += nz;
-					}
-				}
+				V[idx1+3]+=nx;
+				V[idx1+4]+=ny;
+				V[idx1+5]+=nz;
+				V[idx2+3]+=nx;
+				V[idx2+4]+=ny;
+				V[idx2+5]+=nz;
+				V[idx3+3]+=nx;
+				V[idx3+4]+=ny;
+				V[idx3+5]+=nz;
 			}
 
 			// ----- normalize normals and add to V ---------------------------
-			for (i=0; i<N.length; i++)
+			for (i=0; i<I.length; i+=8)
 			{
-				N[i].normalize();
-				V[i*8+3] = N[i].x;
-				V[i*8+4] = N[i].y;
-				V[i*8+5] = N[i].z;
+				nx = V[i+3];
+				ny = V[i+4];
+				nz = V[i+5];
+				var _nl:Number = 1/Math.sqrt(nx*nx+ny*ny+nz*nz);
+				V[i+3] *= _nl;
+				V[i+4] *= _nl;
+				V[i+5] *= _nl;
 			}
 
 			// ----- genertates tangents and sets geometry data to mesh -------
 			var m:Mesh = new Mesh();
 			m.setGeometry(calcTangentBasis(I,V),I);
-			m.setTexture(tex);		// can be null tex
+			m.material.setTexMap(tex);		// can be null tex
 			return m;
 		}//endfunction
 
@@ -2465,7 +2335,7 @@
 			var R:Vector.<Number> = C1.concat(C2.concat(S));
 			var m:Mesh = new Mesh();
 			m.createGeometry(R);
-			m.setTexture(tex);
+			m.material.setTexMap(tex);
 			return m;
 		}//endfunction
 
@@ -2734,7 +2604,7 @@
 				{
 					var cm:Mesh = new Mesh();
 					cm.createGeometry(verticesData);
-					cm.setTexture(mtl);	//
+					cm.material.texMap = mtl;	//
 					cm.centerToGeometry();
 					mmesh.addChild(cm);
 				}
@@ -4651,33 +4521,3 @@ class TriData
 
 }//endclass
 
-/**
- * private class to hold ambient rgb, spec strength and hardness of a mesh
- */
-class Material
-{
-	public var ambR:Number = 0.5;
-	public var ambG:Number = 0.5;
-	public var ambB:Number = 0.5;
-	public var fogR:Number = 0;
-	public var fogG:Number = 0;
-	public var fogB:Number = 0;
-	public var fogFar:Number = 0;
-	public var specStr:Number = 0.5;
-	public var specHard:Number = 0.5;
-
-	public function clone():Material
-	{
-		var lum:Material = new Material();
-		lum.ambR = ambR;
-		lum.ambG = ambG;
-		lum.ambB = ambB;
-		lum.fogR = fogR;
-		lum.fogG = fogG;
-		lum.fogB = fogB;
-		lum.fogFar = fogFar;
-		lum.specStr = specStr;
-		lum.specHard = specHard;
-		return lum;
-	}//endfunction
-}//endclass
