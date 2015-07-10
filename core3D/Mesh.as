@@ -43,7 +43,6 @@
 		public var jointsData:Vector.<Number>;			// joints position and orientation data for GPU skinning
 		public var transform:Matrix4x4;					// local transform matrix of this mesh
 		public var castsShadow:Boolean = true;			// specifies if this mesh geometry casts shadow
-		public var useMipMapping:Boolean = false;		// specifies whether to use mipmapping to render this mesh
 		public var workingTransform:Matrix4x4;			// calculated global transform for this mesh during rendering
 
 		public var material:Material;					// contains {ambR,ambG,ambB,specStr,specHard,fogR,fogG,fogB,fogFar}
@@ -65,6 +64,11 @@
 		private var dataType:int = -1;					// empty mesh type is -1
 		private var builtOnState:uint = 0;				// must match global stateId for shader program to be guaranteed valid
 
+		public static const MIP_NONE:String 	= "mipnone";
+		public static const MIP_LINEAR:String 	= "miplinear";
+		public static const MIP_NEAREST:String 	= "mipnearest";
+		private static var mipMapping:String = MIP_LINEAR;	// specifies whether to use mipmapping to render this mesh
+		
 		public static const _typeV:int = 0;				// normal vertices data
 		public static const _typeS:int = 1;				// skinning data
 		public static const _typeP:int = 2;				// batch particles data
@@ -94,7 +98,6 @@
 		private static var prevProg:Program3D = null;
 		private static var renderedWithShadows:Boolean=false;
 		private static var stateId:uint = 1;			// incremented when global settings changed
-
 
 		private static var gettingContext:Boolean = false;	// GLOBAL chks if in process of getting context
 		private static var lightDCMs:Vector.<CubeTexture>;	// GLOBAL depth buffers rendered light POV used for shadow mapping
@@ -770,9 +773,9 @@
 			}
 
 			// ----- upload texture and specmap ---------------------
-			textureBuffer = uploadTextureBuffer(material.texMap,false,true);	// no update upload mips
-			normMapBuffer = uploadTextureBuffer(material.normMap,false,true);	// no update upload mips
-			specMapBuffer = uploadTextureBuffer(material.specMap,false,true);	// no update upload mips
+			textureBuffer = uploadTextureBuffer(material.texMap,mipMapping!=MIP_NONE,true);		// no update upload mips
+			normMapBuffer = uploadTextureBuffer(material.normMap,mipMapping!=MIP_NONE,true);	// no update upload mips
+			specMapBuffer = uploadTextureBuffer(material.specMap,mipMapping!=MIP_NONE,true);	// no update upload mips
 
 			// ----- create mesh custom shader program --------------
 			if (lightsConst==null)	lightsConst = Vector.<Number>();
@@ -788,11 +791,11 @@
 
 			var fragSrc:String = null;
 			if (material.texMap!=null && numLights==0 && material.ambR==1 && material.ambG==1 && material.ambB==1 && material.specStr==0 && material.fogFar==0)
-				fragSrc = "tex oc, v2, fs0 <2d,linear,mipnone,repeat>\n";
+				fragSrc = "tex oc, v2, fs0 <2d,linear,"+mipMapping+",repeat>\n";
 			else
 				fragSrc = _stdFragSrc(	numLights,
 										material.texMap != null,
-										useMipMapping,
+										mipMapping,
 										material.normMap != null,
 										material.specMap != null,
 										material.fogFar > 0,
@@ -1262,6 +1265,11 @@
 			return camT.scale(1,1,1);	// duplicate and return
 		}//endfunction
 
+		public static function setMipMapping(mode:String):void
+		{
+			
+		}
+		
 		/**
 		* sets this mesh to be rendered under given lighting conditions
 		* setup fragment program to handle ambient lighting and light points
@@ -3216,11 +3224,9 @@
 		*				fc_n*2+4= [px,py,pz,0]		// light n position
 		*				fc_n*2+5= [r,g,b,1]			// light n color,
 		*/
-		private static function _stdFragSrc(numLights:uint,hasTex:Boolean,useMip:Boolean,hasNorm:Boolean,hasSpec:Boolean,fog:Boolean,envMap:Boolean,shadowMap:Boolean) : String
+		private static function _stdFragSrc(numLights:uint,hasTex:Boolean,mip:String,hasNorm:Boolean,hasSpec:Boolean,fog:Boolean,envMap:Boolean,shadowMap:Boolean) : String
 		{
 			var s:String = "";
-			var mip:String = "mipnone";
-			if (useMip) mip = "miplinear";
 
 			// ----- frag shader optimization test --------------------------------------
 			if (numLights==0)
