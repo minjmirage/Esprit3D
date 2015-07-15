@@ -452,7 +452,7 @@
 				}
 
 				setGeometry(nV,nI);
-				debugTrace("compressed T:"+(getTimer()-timr)+" from "+oV.length/11+" to "+nV.length/11+"");
+				//debugTrace("compressed T:"+(getTimer()-timr)+" from "+oV.length/11+" to "+nV.length/11+"");
 			}
 
 			// ----- do for submeshes too if required
@@ -761,7 +761,7 @@
 		private function setContext3DBuffers(shadows:Boolean) : void
 		{
 			if (context3d == null)	return;
-			debugTrace("setContext3DBuffers");
+			//debugTrace("setContext3DBuffers");
 
 			// ----- upload geometry data ---------------------------
 			if (vertexBuffer==null || indexBuffer==null)
@@ -1265,10 +1265,14 @@
 			return camT.scale(1,1,1);	// duplicate and return
 		}//endfunction
 
+		/**
+		* sets mipmapping mode, one of Mesh.MIP_NONE,MIP_LINEAR,MIP_NEAREST
+		*/
 		public static function setMipMapping(mode:String):void
 		{
-			
-		}
+			mipMapping = mode;
+			stateId++;
+		}//endfunction
 		
 		/**
 		* sets this mesh to be rendered under given lighting conditions

@@ -85,6 +85,7 @@ package core3D
 			fogR = r;
 			fogG = g;
 			fogB = b;
+			fogFar = fogDist;
 		}//endfunction
 		
 		/**
