@@ -4309,7 +4309,7 @@ class CollisionGeometry
 	private function _sphereHitsGeometry(ox:Number,oy:Number,oz:Number,r:Number,Tris:Vector.<TriData>=null) : Vector3D
 	{
 		var hit:Vector3D = null;
-		for (var i:int=Tris.length-1; i>=0; i--)
+		for (var i:int=Tris.length-1; i>-1; i--)
 		{
 			var tri:TriData = Tris[i];
 			
@@ -4326,14 +4326,14 @@ class CollisionGeometry
 			var nx:Number = tri.nx;	//	normal x for the triangle
 			var ny:Number = tri.ny;	//	normal y for the triangle
 			var nz:Number = tri.nz;	//	normal z for the triangle
-
+			
 			// let X be the intersection point, then equation of triangle plane Tn.(X-Ta) = 0
 			// but X = o+Tn*k   =>   Tn.(o+Tn*k-Ta) = 0    =>   Tn.Tn*k + Tn.(o-Ta) = 0
 			// k = (Ta-o).Tn/Tn.Tn
 			// but Tn.Tn == 1   =>  k = (Ta-o).Tn
 
 			var k:Number = (nx*(ax-ox) + ny*(ay-oy) + nz*(az-oz));
-			if (k>=-r && k<=0)	// if sphere intersects plane
+			if (k>-r && k<r)	// if sphere intersects plane
 			{
 				var ix:Number = ox+nx*k - ax;		// vector to segment intersection on triangle plane
 				var iy:Number = oy+ny*k - ay;		// vector to segment intersection on triangle plane
@@ -4471,7 +4471,7 @@ class TriData
 		nx = py*qz-pz*qy;				//	normal x for the triangle
 		ny = pz*qx-px*qz;				//	normal y for the triangle
 		nz = px*qy-py*qx;				//	normal z for the triangle
-		var nl:Number = Math.sqrt(nx * nx + ny * ny + nz * nz);
+		var nl:Number = Math.sqrt(nx*nx + ny*ny + nz*nz);
 		nx /= nl;
 		ny /= nl;
 		nz /= nl;
