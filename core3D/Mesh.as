@@ -37,6 +37,7 @@
 	*/
 	public final class Mesh
 	{
+		public var name:String;
 		public var childMeshes:Vector.<Mesh>;			// list of children meshes
 		public var vertData:Vector.<Number>;			// vertices, normals and UV data [vx,vy,vz,nx,ny,nz,u,v, ...] can be null
 		public var idxsData:Vector.<uint>;				// indices to vertices forming triangles [a1,a2,a3, b1,b2,b3, ...]
@@ -49,7 +50,7 @@
 
 		private var collisionGeom:CollisionGeometry;	// for detecting collision on this mesh geometry
 		private var illuminable:Boolean = true;			// specifies if this mesh can be illuminated with directional lights
-		
+
 		public var trisCnt:int;							// number of triangles to tell program to draw
 		private var vertexBuffer:VertexBuffer3D;		// Where Vertex positions for this mesh will be stored
 		private var indexBuffer:IndexBuffer3D;			// Order of Vertices to be drawn for this mesh
@@ -60,7 +61,7 @@
 		private var depthProgram:Program3D;				// program for rendering depth maps for shadow mapping
 
 		public var depthWrite:Boolean=true;				// whether to write to depth buffer
-		
+
 		private var dataType:int = -1;					// empty mesh type is -1
 		private var builtOnState:uint = 0;				// must match global stateId for shader program to be guaranteed valid
 
@@ -68,7 +69,7 @@
 		public static const MIP_LINEAR:String 	= "miplinear";
 		public static const MIP_NEAREST:String 	= "mipnearest";
 		private static var mipMapping:String = MIP_LINEAR;	// specifies whether to use mipmapping to render this mesh
-		
+
 		public static const _typeV:int = 0;				// normal vertices data
 		public static const _typeS:int = 1;				// skinning data
 		public static const _typeP:int = 2;				// batch particles data
@@ -115,6 +116,7 @@
 		*/
 		public function Mesh() : void
 		{
+			name = "";
 			childMeshes = new Vector.<Mesh>();	// child meshes list
 			transform = new Matrix4x4();
 			material = new Material();
@@ -129,6 +131,7 @@
 				setContext3DBuffers(renderedWithShadows);	// if buffers not set
 
 			var m:Mesh = new Mesh();
+			m.name = name;
 			m.dataType = dataType;
 			m.trisCnt = trisCnt;
 			m.vertData = vertData;
@@ -478,21 +481,21 @@
 				verticesData = verticesData.slice(0,maxVertices*8);
 			}
 			var n:Number = verticesData.length/8;
-			
+
 			// ----- generate indices data for triangles if null --------------
 			if (indicesData == null)
 			{
 				indicesData=new Vector.<uint>();
 				for (i=0; i<n; i++)	indicesData.push(i);
 			}
-			
+
 			// ----- calc default normals to data if normals are 0,0,0 --------
 			for (var i:int=0; i<n; i+=3)		// 1 tri takes 24 numbers data
 			{
 				var ia:int = indicesData[i] * 8;
 				var ib:int = indicesData[i+1] * 8;
 				var ic:int = indicesData[i+2] * 8;
-				
+
 				if ((verticesData[3+ia]==0 && verticesData[4+ia]==0 && verticesData[5+ia]==0) ||
 					(verticesData[3+ib]==0 && verticesData[4+ib]==0 && verticesData[5+ib]==0) ||
 					(verticesData[3+ic]==0 && verticesData[4+ic]==0 && verticesData[5+ic]==0))
@@ -680,11 +683,11 @@
 		{
 			if (mat == null) return;
 			material = mat;
-			
+
 			for (var i:int = childMeshes.length - 1; i > -1; i--)
 				childMeshes[i].setMaterialToTree(mat);
 		}//endfunction
-		
+
 		/**
 		* returns the datatype for this mesh
 		*/
@@ -880,7 +883,7 @@
 
 				if (collisionGeom.lineHitsBounds(ox,oy,oz,vx,vy,vz))
 					hpt = collisionGeom.lineHitsGeometry(ox,oy,oz,vx,vy,vz);
-					
+
 				if (hpt!=null)
 				{
 					// ----- transform hit pt to global space ---------------
@@ -931,10 +934,10 @@
 				var loy:Number = invT.ba*ox + invT.bb*oy + invT.bc*oz + invT.bd;
 				var loz:Number = invT.ca*ox + invT.cb*oy + invT.cc*oz + invT.cd;
 				var lr:Number = r*Math.pow(Math.abs(invT.determinant3()),1/3);		// wow heavy
-				
+
 				if (collisionGeom.sphereHitsBounds(lox,loy,loz,lr))
 					hpt = collisionGeom.sphereHitsGeometry(lox,loy,loz,lr);
-					
+
 				if (hpt!=null)
 				{	// ----- transform hit pt to global space ---------------
 					hpt =new Vector3D(	T.aa*hpt.x + T.ab*hpt.y + T.ac*hpt.z + T.ad,	// un transform hit point
@@ -958,20 +961,23 @@
 
 			return hpt;
 		}//endfunction
-		
+
 		/**
-		* get bounding box min in global space for static geometry mesh only _typeV
+		* get bounding box min in global space for static geometry mesh only _typeV returns null otherwise
 		*/
-		public function minXYZ() : Vector3D
+		public function minXYZ(parentT:Matrix4x4=null) : Vector3D
 		{
-			var minV:Vector3D = new Vector3D();
-			if (dataType==_typeV) minV = estimateMinMax(transform,this,false);
-			if (minV==null)	minV = new Vector3D(0,0,0);
-			for (var i:int=0; i<childMeshes.length; i++)
+			var T:Matrix4x4 = transform;
+			if (parentT!=null) T = parentT.mult(T);
+			var minV:Vector3D = null;
+			if (dataType==_typeV) minV = estimateMinMax(T,this,false);
+			for (var i:int=childMeshes.length-1; i>-1; i--)
 			{	// scan through all child meshes
 				var cm:Mesh = childMeshes[i];
-				var cminV:Vector3D = estimateMinMax(transform.mult(cm.transform),cm,false);
-				if (cminV!=null)
+				var cminV:Vector3D = cm.minXYZ(T);
+				if (minV==null)
+					minV = cminV;
+				else if (cminV!=null)
 				{
 					if (cminV.x<minV.x) minV.x = cminV.x;
 					if (cminV.y<minV.y) minV.y = cminV.y;
@@ -982,18 +988,21 @@
 		}//endfunction
 
 		/**
-		* get bounding box max in global space for static geometry mesh only _typeV
+		* get bounding box max in global space for static geometry mesh only _typeV returns null otherwise
 		*/
-		public function maxXYZ() : Vector3D
+		public function maxXYZ(parentT:Matrix4x4=null) : Vector3D
 		{
-			var maxV:Vector3D = new Vector3D();
-			if (dataType==_typeV) maxV = estimateMinMax(transform,this,true);
-			if (maxV==null)	maxV = new Vector3D(0,0,0);
-			for (var i:int=0; i<childMeshes.length; i++)
+			var T:Matrix4x4 = transform;
+			if (parentT!=null) T = parentT.mult(T);
+			var maxV:Vector3D = null;
+			if (dataType==_typeV) maxV = estimateMinMax(T,this,true);
+			for (var i:int=childMeshes.length-1; i>-1; i--)
 			{	// scan through all child meshes
 				var cm:Mesh = childMeshes[i];
-				var cmaxV:Vector3D = estimateMinMax(transform.mult(cm.transform),cm,true);
-				if (cmaxV!=null)
+				var cmaxV:Vector3D = cm.maxXYZ(T);
+				if (maxV==null)
+					maxV = cmaxV;
+				else if (cmaxV!=null)
 				{
 					if (cmaxV.x>maxV.x) maxV.x = cmaxV.x;
 					if (cmaxV.y>maxV.y) maxV.y = cmaxV.y;
@@ -1010,7 +1019,7 @@
 		{
 			antiAliasing = val;
 			if (context3d==null) return;
-			
+
 			try {
 				context3d.configureBackBuffer(viewWidth, viewHeight, antiAliasing, true);
 				debugTrace("configure back buffer to, "+viewWidth+"x"+viewHeight);
@@ -1166,45 +1175,91 @@
 		}//endfunction
 
 		/**
-		* center the mesh's origin position to its mean vertices center, useful for eliminating hit detect with bounding radius problem
+		* center the mesh's origin position to its bounding box center, useful for eliminating hit detect with bounding radius problem
 		*/
-		public function centerToGeometry(propagate:Boolean=false) : void
+		public function centerToGeometry() : void
 		{
-			var mean:Vector3D = new Vector3D(0,0,0);
-
+			// ----- apply current transform to self and all children
+			applyTransform();
+			
+			function _centerMesh(m:Mesh):void
+			{
+				// ----- center child meshes
+				for (var i:int=m.childMeshes.length-1; i>-1; i--)
+					_centerMesh(m.childMeshes[i]);
+				
+				// ----- recenter (reshift) this mesh
+				var min:Vector3D = minXYZ();		// including child meshes
+				var max:Vector3D = maxXYZ();		// including child meshes
+				if (min==null || max==null) return;
+				var center:Vector3D = new Vector3D((min.x+max.x)/2,(min.y+max.y)/2,(min.z+max.z)/2);
+				
+				if (m.dataType==_typeV && m.idxsData!=null && m.vertData!=null)
+				{
+					// ----- apply translation to vertices
+					for (i=m.vertData.length-11; i>-1; i-=11)
+					{
+						m.vertData[i+0] -= center.x;
+						m.vertData[i+1] -= center.y;
+						m.vertData[i+2] -= center.z;
+					}
+					m.setGeometry(m.vertData,m.idxsData);
+				}
+				
+				// ----- modify transforms 
+				m.transform = new Matrix4x4().translate(center.x,center.y,center.z);
+				for (i=m.childMeshes.length-1; i>-1; i--)
+					m.childMeshes[i].transform = m.childMeshes[i].transform.translate(-center.x,-center.y,-center.z);
+			}//endfunction
+			
+			_centerMesh(this);
+		}//endfunction
+		
+		/**
+		 * applies transform to mesh vertices and sets transform matrix to identity matrix to self and all children
+		 */
+		public function applyTransform(T:Matrix4x4=null):void
+		{
+			var i:int=0;
+			if (T==null) 	T = transform;
+			else			T = T.mult(transform);
+			
 			if (dataType==_typeV && idxsData!=null && vertData!=null)
 			{
-				var n:int = vertData.length;
-				for (var i:int=0; i<n; i+=11)
+				// ----- apply transform to vertices
+				for (i=vertData.length-11; i>-1; i-=11)
 				{
-					mean.x+=vertData[i];
-					mean.y+=vertData[i+1];
-					mean.z+=vertData[i+2];
+					var vx:Number = vertData[i+0];
+					var vy:Number = vertData[i+1];
+					var vz:Number = vertData[i+2];
+					var nx:Number = vertData[i+3];
+					var ny:Number = vertData[i+4];
+					var nz:Number = vertData[i+5];
+					var tx:Number = vertData[i+6];
+					var ty:Number = vertData[i+7];
+					var tz:Number = vertData[i+8];
+					vertData[i+0] = T.aa*vx+T.ab*vy+T.ac*vz+T.ad;
+					vertData[i+1] = T.ba*vx+T.bb*vy+T.bc*vz+T.bd;
+					vertData[i+2] = T.ca*vx+T.cb*vy+T.cc*vz+T.cd;
+					vertData[i+3] = T.aa*nx+T.ab*ny+T.ac*nz;
+					vertData[i+4] = T.ba*nx+T.bb*ny+T.bc*nz;
+					vertData[i+5] = T.ca*nx+T.cb*ny+T.cc*nz;
+					vertData[i+6] = T.aa*tx+T.ab*ty+T.ac*tz;
+					vertData[i+7] = T.ba*tx+T.bb*ty+T.bc*tz;
+					vertData[i+8] = T.ca*tx+T.cb*ty+T.cc*tz;
 				}//endfor
-
-				mean.scaleBy(11/n);
-
-				for (i=0; i<n; i+=11)
-				{
-					vertData[i]-=mean.x;
-					vertData[i+1]-=mean.y;
-					vertData[i+2]-=mean.z;
-				}//endfor
-
 				setGeometry(vertData,idxsData);
-				if (transform==null) transform = new Matrix4x4();
-				transform = transform.translate(mean.x,mean.y,mean.z);
+			}//endif
+			
+			// ----- apply transform to child meshes as well
+			for (i=childMeshes.length-1; i>-1; i--)
+			{
+				var cm:Mesh = childMeshes[i];
+				cm.applyTransform(T);
 			}
-
-			if (propagate)
-				for (i=childMeshes.length-1; i>-1; i--)
-				{
-					childMeshes[i].centerToGeometry(propagate);
-					if (childMeshes[i].transform==null)	childMeshes[i].transform = new Matrix4x4();
-					childMeshes[i].transform.translate(-mean.x,-mean.y,-mean.z);
-				}
+			transform = new Matrix4x4();
 		}//endfunction
-
+		
 		/**
 		* returns the position (vx,vy,vz) and direction & magnitude (nx,ny,nz) for line directly under cursor
 		*/
@@ -1273,7 +1328,7 @@
 			mipMapping = mode;
 			stateId++;
 		}//endfunction
-		
+
 		/**
 		* sets this mesh to be rendered under given lighting conditions
 		* setup fragment program to handle ambient lighting and light points
@@ -1396,12 +1451,12 @@
 		*/
 		private static function _renderBranch(M:Mesh,shadows:Boolean=false):void
 		{
-			if (renderedWithShadows != shadows) 
+			if (renderedWithShadows != shadows)
 			{
 				stateId++; 		// triggers shader recompile
 				renderedWithShadows = shadows;
 			}
-			
+
 			if (lightsConst==null)	setPointLighting(Vector.<Number>([0,focalL*10,0,  1.0,1.0,1.0]));	// light points
 			var n:uint = lightsConst.length/8;	// number of lights
 
@@ -1433,21 +1488,21 @@
 			var R:Vector.<Mesh> = new Vector.<Mesh>();
 			M.flattenTree(viewT,R);
 			R = R.sort(depthCompare);
-			
+
 			var rlen:uint = R.length;
 			numMeshes = rlen;
 			for (var i:int=0; i<rlen; i++)
 			{
 				M = R[i];
 				var mat:Material = M.material;
-				if (mat.changed!=0 || M.builtOnState!=stateId) 	
+				if (mat.changed!=0 || M.builtOnState!=stateId)
 				{
 					M.stdProgram = null; 	// force this mesh shader prog rebuild
-					mat.changed=0;	
+					mat.changed=0;
 				}
-				
+
 				// ----- prep for render if mesh is not yet prep
-				if (M.dataType<0)	{/*type empty mesh*/}
+				if (M.dataType<0 || M.trisCnt<=0)	{/*type empty mesh*/}
 				else
 				{
 					if (M.stdProgram==null) 	M.setContext3DBuffers(shadows); // build shader prog if incorrect
@@ -1786,7 +1841,7 @@
 		{
 			var ta:Matrix4x4 = meshA.workingTransform;
 			var tb:Matrix4x4 = meshB.workingTransform;
-			
+
 			if (meshA.material.blendSrc=="one" && meshB.material.blendSrc=="one")
 			{	// if opaque objects, draw the one in front first
 				if (ta.cd > tb.cd)
@@ -1794,10 +1849,10 @@
 				else
 					return -1;
 			}
-			
+
 			var dA:int = int.MAX_VALUE;
 			var dB:int = int.MAX_VALUE;
-			
+
 			if (meshA.material.blendSrc!="one")
 			{
 				dA = ta.cd;		// compare z
@@ -2237,7 +2292,7 @@
 		{
 			if (map.width * map.height > 65535)
 				debugTrace("Error : Mesh.createHeightMap (map.width*map.height) > 65535");
-			
+
 			// ----- generate vertices data -------------------------
 			var V:Vector.<Number> = new Vector.<Number>();
 			var w:int =map.width;
@@ -2427,6 +2482,8 @@
 			var F:Array = [];			// array to contain triangle faces data
 			var G:Array = [];			// groups array, containing submeshes faces
 			var A:Array = [];			// temp array
+			var objName:String="Object";
+			var Names:Vector.<String> = new Vector.<String>();
 
 			var n:uint = D.length;
 			for (i=0; i<n; i++)
@@ -2477,11 +2534,15 @@
 				else if (D[i].substr(0,2)=="o ")		// ----- if object definition
 				{
 					G.push(F);
+					Names.push(objName);
+					objName = D[i].substr(2);
 					F = [];
 				}
 				else if (D[i].substr(0,2)=="g ")		// ----- if group definition
 				{
 					G.push(F);
+					Names.push(objName);
+					objName = D[i].substr(2);
 					F = [];
 				}
 				else if (D[i].substr(0,7)=="usemtl ")
@@ -2491,6 +2552,7 @@
 			}//endfor
 
 			G.push(F);
+			Names.push(objName);
 
 			//trace("var V:Array="+arrToStr(V));
 			//trace("var T:Array="+arrToStr(T));
@@ -2617,7 +2679,7 @@
 					var cm:Mesh = new Mesh();
 					cm.createGeometry(verticesData);
 					cm.material.texMap = mtl;	//
-					cm.centerToGeometry();
+					cm.name = Names[g];
 					mmesh.addChild(cm);
 				}
 			}//endfor g
@@ -2752,49 +2814,36 @@
 				ba.endian = "littleEndian";
 			}
 
-			// ----- type of mesh data
-			ba.writeInt(dataType);
+			// ----- write type of mesh data
+			ba.writeShort(dataType);
+
+			// ----- write mesh name string
+			ba.writeShort(name.length);
+			ba.writeMultiByte(name,"iso-8859-1");
+
+			// ----- write mesh transform matrix
+			ba.writeFloat(transform.aa);
+			ba.writeFloat(transform.ab);
+			ba.writeFloat(transform.ac);
+			ba.writeFloat(transform.ad);
+			ba.writeFloat(transform.ba);
+			ba.writeFloat(transform.bb);
+			ba.writeFloat(transform.bc);
+			ba.writeFloat(transform.bd);
+			ba.writeFloat(transform.ca);
+			ba.writeFloat(transform.cb);
+			ba.writeFloat(transform.cc);
+			ba.writeFloat(transform.cd);
+			ba.writeFloat(transform.da);
+			ba.writeFloat(transform.db);
+			ba.writeFloat(transform.dc);
+			ba.writeFloat(transform.dd);
 
 			// ----- write vertex data
 			var n:int=0;
 			if (vertData!=null) n=vertData.length;	// length of vertex data
 			ba.writeInt(n);
-			var vD:Vector.<Number> = vertData;
-			if (dataType==_typeV && vD!=null)
-			{
-				// ----- apply current transform to mesh if typeV
-				if (transform==null) transform = new Matrix4x4();
-				var T:Matrix4x4 = transform;
-
-				vD = new Vector.<Number>();
-				for (var j:int=0; j<n;)
-				{
-					var vx:Number = vertData[j++];
-					var vy:Number = vertData[j++];
-					var vz:Number = vertData[j++];
-					var nx:Number = vertData[j++];
-					var ny:Number = vertData[j++];
-					var nz:Number = vertData[j++];
-					var tx:Number = vertData[j++];
-					var ty:Number = vertData[j++];
-					var tz:Number = vertData[j++];
-					var nvx:Number = T.aa*vx+T.ab*vy+T.ac*vz+T.ad;
-					var nvy:Number = T.ba*vx+T.bb*vy+T.bc*vz+T.bd;
-					var nvz:Number = T.ca*vx+T.cb*vy+T.cc*vz+T.cd;
-					var nnx:Number = T.aa*nx+T.ab*ny+T.ac*nz;
-					var nny:Number = T.ba*nx+T.bb*ny+T.bc*nz;
-					var nnz:Number = T.ca*nx+T.cb*ny+T.cc*nz;
-					var ntx:Number = T.aa*tx+T.ab*ty+T.ac*tz;
-					var nty:Number = T.ba*tx+T.bb*ty+T.bc*tz;
-					var ntz:Number = T.ca*tx+T.cb*ty+T.cc*tz;
-					var nnl:Number = Math.sqrt(nnx*nnx+nny*nny+nnz*nnz);
-					nnx/=nnl; nny/=nnl; nnz/=nnl;
-					var ntl:Number = Math.sqrt(ntx*ntx+nty*nty+ntz*ntz);
-					ntx/=ntl; nty/=ntl; ntz/=ntl;
-					vD.push(nvx,nvy,nvz,nnx,nny,nnz,ntx,nty,ntz,vertData[j++],vertData[j++]);
-				}//endfor
-			}//endif
-			for (var i:int=0; i<n; i++)	ba.writeFloat(vD[i]);
+			for (var i:int=0; i<n; i++)	ba.writeFloat(vertData[i]);
 
 			// ----- write index data
 			n=0;
@@ -2822,22 +2871,48 @@
 			ba.position = 0;
 
 			do {
-				var type:int = ba.readInt();
-				var i:int=0;
+				var m:Mesh = new Mesh();
 
+				// ----- read mesh type
+				m.dataType = ba.readShort();
+
+				// ----- read mesh name
+				var i:int = ba.readShort();
+				m.name = ba.readMultiByte(i,"iso-8859-1");
+
+				// ----- read mesh transform matrix
+				m.transform.aa = ba.readFloat();
+				m.transform.ab = ba.readFloat();
+				m.transform.ac = ba.readFloat();
+				m.transform.ad = ba.readFloat();
+				m.transform.ba = ba.readFloat();
+				m.transform.bb = ba.readFloat();
+				m.transform.bc = ba.readFloat();
+				m.transform.bd = ba.readFloat();
+				m.transform.ca = ba.readFloat();
+				m.transform.cb = ba.readFloat();
+				m.transform.cc = ba.readFloat();
+				m.transform.cd = ba.readFloat();
+				m.transform.da = ba.readFloat();
+				m.transform.db = ba.readFloat();
+				m.transform.dc = ba.readFloat();
+				m.transform.dd = ba.readFloat();
+
+				// ----- read vertices data
 				var vl:int = ba.readInt();	// verticesData length
 				var verticesData:Vector.<Number> = new Vector.<Number>();
 				for (i=0; i<vl; i++)	verticesData.push(ba.readFloat());
+
+				// ----- read tri indices data
 				var il:int = ba.readInt();	// indicesData length
 				var indicesData:Vector.<uint> = new Vector.<uint>();
 				for (i=0; i<il; i++)	indicesData.push(ba.readShort());
 
-				var m:Mesh = new Mesh();
+
 				if (verticesData.length>0 && indicesData.length>0)
 				{
 					m.vertData = verticesData;
 					m.idxsData = indicesData;
-					m.dataType = type;
 					m.trisCnt = il/3;	// number of tris to render
 					m.collisionGeom = new CollisionGeometry(verticesData,indicesData);
 				}
@@ -3263,7 +3338,7 @@
 				s =	"tex ft0, v2, fs0 <2d,linear,"+mip+",repeat> \n"; 	// ft0=sample texture with UV use miplinear to enable mipmapping
 			else
 				s = "mov ft0, fc0.zzzz\n";				// ft0 = 1,1,1,1
-			
+
 			if (hasNorm)	// if has normal mapping
 			s +="tex ft7, v2, fs1 <2d,linear,"+mip+",repeat>\n" +	// ft7=sample normMap with UV
 				"mul ft7.xyz, ft7.xyz, fc0.www\n"+			// ft7.xyz *= 2
@@ -3277,7 +3352,7 @@
 				"nrm ft1.xyz, ft1.xyz\n";
 			else
 			s +="nrm ft1.xyz, v1.xyz\n";			// normalized vertex normal
-			
+
 			// ----- for each light point, op codes to handle lighting mix ----
 			for (var i:int=0; i<numLights; i++)
 			{
@@ -3347,7 +3422,7 @@
 
 			return s;
 		}//endfunction
-		
+
 		/**
 		* environment mapping with cube map		(7 instrs)
 		* outputs:	 ft4 = env map colors
@@ -3768,7 +3843,7 @@ class CollisionGeometry
 	public var maxXYZ:Vector3D;
 	public var radius:Number;
 	public var Tris:Vector.<TriData>;
-	
+
 	private var BoundingTris:Vector.<TriData> = null;	// triangles that makes up the bounding cube of this geometry
 
 	/**
@@ -3817,28 +3892,28 @@ class CollisionGeometry
 			maxXYZ.z=Math.max(maxXYZ.z,td.az,td.bz,td.cz);
 		}
 
-		BoundingTris = 
+		BoundingTris =
 		Vector.<TriData>([new TriData(	minXYZ.x,minXYZ.y,minXYZ.z,		// front plane
 										maxXYZ.x,minXYZ.y,minXYZ.z,
 										maxXYZ.x,maxXYZ.y,minXYZ.z),
 						new TriData(	minXYZ.x,minXYZ.y,minXYZ.z,
 										minXYZ.x,maxXYZ.y,minXYZ.z,
 										maxXYZ.x,maxXYZ.y,minXYZ.z),
-										
+
 						new TriData(	minXYZ.x,minXYZ.y,maxXYZ.z,		// back plane
 										maxXYZ.x,minXYZ.y,maxXYZ.z,
 										maxXYZ.x,maxXYZ.y,maxXYZ.z),
 						new TriData(	minXYZ.x,minXYZ.y,maxXYZ.z,
 										minXYZ.x,maxXYZ.y,maxXYZ.z,
 										maxXYZ.x,maxXYZ.y,maxXYZ.z),
-										
+
 						new TriData(	minXYZ.x,minXYZ.y,minXYZ.z,		// left plane
 										minXYZ.x,maxXYZ.y,minXYZ.z,
 										minXYZ.x,maxXYZ.y,maxXYZ.z),
 						new TriData(	minXYZ.x,minXYZ.y,minXYZ.z,
 										minXYZ.x,minXYZ.y,maxXYZ.z,
 										minXYZ.x,maxXYZ.y,maxXYZ.z),
-										
+
 						new TriData(	maxXYZ.x,minXYZ.y,minXYZ.z,		// right plane
 										maxXYZ.x,maxXYZ.y,minXYZ.z,
 										maxXYZ.x,maxXYZ.y,maxXYZ.z),
@@ -3852,14 +3927,14 @@ class CollisionGeometry
 						new TriData(	minXYZ.x,minXYZ.y,minXYZ.z,
 										minXYZ.x,minXYZ.y,maxXYZ.z,
 										maxXYZ.x,minXYZ.y,maxXYZ.z),
-										
+
 						new TriData(	minXYZ.x,maxXYZ.y,minXYZ.z,		// top plane
 										maxXYZ.x,maxXYZ.y,minXYZ.z,
 										maxXYZ.x,maxXYZ.y,maxXYZ.z),
 						new TriData(	minXYZ.x,maxXYZ.y,minXYZ.z,
 										minXYZ.x,maxXYZ.y,maxXYZ.z,
 										maxXYZ.x,maxXYZ.y,maxXYZ.z)]);
-		
+
 		radius = Math.sqrt(radius);
 	}//endConstructor
 
@@ -3961,7 +4036,7 @@ class CollisionGeometry
 	}//endfunction
 
 	/**
-	* scales the detection geometry
+	* rigid translates the detection geometry
 	*/
 	public function translate(tx:Number,ty:Number,tz:Number) : void
 	{
@@ -4174,7 +4249,7 @@ class CollisionGeometry
 	{
 		return _lineHitsGeometry(lox,loy,loz,lvx,lvy,lvz,Tris);
 	}//endfunction
-	
+
 	/**
 	* returns point where line pt:(lox,loy,loz) vect:(lvx,lvy,lvz) hits this geometry
 	* returns {vx,vy,vz, nx,ny,nz}	where (vx,vy,vz) is hit point and (nx,ny,nz) is triangle normal
@@ -4182,7 +4257,7 @@ class CollisionGeometry
 	private function _lineHitsGeometry(lox:Number,loy:Number,loz:Number,lvx:Number,lvy:Number,lvz:Number,Tris:Vector.<TriData>) : VertexData
 	{
 		var hit:VertexData = null;
-		for (var i:int=Tris.length-1; i>=0; i--)
+		for (var i:int=Tris.length-1; i>-1; i--)
 		{
 			var tri:TriData = Tris[i];
 
@@ -4292,7 +4367,7 @@ class CollisionGeometry
 
 		return _sphereHitsGeometry(ox,oy,oz,r,BoundingTris)!=null;
 	}//endfunction
-	
+
 	/**
 	* returns point where sphere pt:(ox,oy,oz) radius:r hits this geometry
 	* returns {vx,vy,vz, nx,ny,nz}	where (vx,vy,vz) is hit point and (nx,ny,nz) is triangle normal
@@ -4301,7 +4376,7 @@ class CollisionGeometry
 	{
 		return _sphereHitsGeometry(ox,oy,oz,r,Tris);
 	}//endfunction
-	
+
 	/**
 	* returns point where sphere pt:(ox,oy,oz) radius:r hits this geometry
 	* returns {vx,vy,vz, nx,ny,nz}	where (vx,vy,vz) is hit point and (nx,ny,nz) is triangle normal
@@ -4312,7 +4387,7 @@ class CollisionGeometry
 		for (var i:int=Tris.length-1; i>-1; i--)
 		{
 			var tri:TriData = Tris[i];
-			
+
 			// ----- chk sphere hits this triangle --------------------
 			var ax:Number = tri.ax;
 			var ay:Number = tri.ay;
@@ -4326,7 +4401,7 @@ class CollisionGeometry
 			var nx:Number = tri.nx;	//	normal x for the triangle
 			var ny:Number = tri.ny;	//	normal y for the triangle
 			var nz:Number = tri.nz;	//	normal z for the triangle
-			
+
 			// let X be the intersection point, then equation of triangle plane Tn.(X-Ta) = 0
 			// but X = o+Tn*k   =>   Tn.(o+Tn*k-Ta) = 0    =>   Tn.Tn*k + Tn.(o-Ta) = 0
 			// k = (Ta-o).Tn/Tn.Tn
@@ -4361,8 +4436,8 @@ class CollisionGeometry
 				{
 					var s:Number = (p_q*w_q - q_q*w_p)/denom;
 					var t:Number = (p_q*w_p - p_p*w_q)/denom;
-					
-					if (s < 0 || t<0 || s+t>1)		// if nearest point not within triangle 
+
+					if (s < 0 || t<0 || s+t>1)		// if nearest point not within triangle
 					{
 						px = bx - ax;				// vect a to b
 						py = by - ay;
@@ -4378,7 +4453,7 @@ class CollisionGeometry
 						py = ay + py*t - oy;
 						pz = az + pz*t - oz;
 						if (px*px+py*py+pz*pz<=r*r)	{r=Math.sqrt(px*px+py*py+pz*pz); hit=new Vector3D(px+ox,py+oy,pz+oz);}
-						
+
 						px = cx - bx;				// vect b to c
 						py = cy - by;
 						pz = cz - bz;
@@ -4393,7 +4468,7 @@ class CollisionGeometry
 						py = by + py*t - oy;
 						pz = bz + pz*t - oz;
 						if (px*px+py*py+pz*pz<=r*r)	{r=Math.sqrt(px*px+py*py+pz*pz); hit=new Vector3D(px+ox,py+oy,pz+oz);}
-						
+
 						px = ax - cx;				// vect c to a
 						py = ay - cy;
 						pz = az - cz;
@@ -4422,7 +4497,7 @@ class CollisionGeometry
 
 		return hit;
 	}//endFunction
-	
+
 }//endclass
 
 /**
@@ -4439,11 +4514,11 @@ class TriData
 	public var cx:Number;		// tri vertex c
 	public var cy:Number;
 	public var cz:Number;
-	
+
 	public var nx:Number;		// normalized triangle normal, by determinant
 	public var ny:Number;
 	public var nz:Number;
-	
+
 
 	public function TriData(ax:Number,ay:Number,az:Number,
 							bx:Number,by:Number,bz:Number,
@@ -4458,7 +4533,7 @@ class TriData
 		this.cx = cx;
 		this.cy = cy;
 		this.cz = cz;
-		
+
 		var px:Number = bx - ax;		// tri side vector from a to b
 		var py:Number = by - ay;		// tri side vector from a to b
 		var pz:Number = bz - az;		// tri side vector from a to b
@@ -4530,4 +4605,3 @@ class TriData
 	}//endfunction
 
 }//endclass
-
