@@ -1189,8 +1189,8 @@
 					_centerMesh(m.childMeshes[i]);
 				
 				// ----- recenter (reshift) this mesh
-				var min:Vector3D = minXYZ();		// including child meshes
-				var max:Vector3D = maxXYZ();		// including child meshes
+				var min:Vector3D = m.minXYZ();		// including child meshes
+				var max:Vector3D = m.maxXYZ();		// including child meshes
 				if (min==null || max==null) return;
 				var center:Vector3D = new Vector3D((min.x+max.x)/2,(min.y+max.y)/2,(min.z+max.z)/2);
 				
@@ -2524,12 +2524,11 @@
 							A.splice(j,1);
 						else
 						{
-							while (A[j].split("/").length<3)	A[j] = A[j]+"/-";
-							A[j] = A[j].split("//").join("/-/");	// replace null values with "-"
-							A[j] = A[j].split("/"); 	// format of f : [[v,uv,n],[v,uv,n],[v,uv,n]]
-							if (A[j][2]=="-")	A[j][2]=A[j][0];	// default normal to vertex idx
+							while (A[j].split("/").length<3)	A[j] = A[j]+"/0";
+							A[j] = A[j].split("//").join("/0/");	// replace null values with "0"
+							A[j] = A[j].split("/"); 				// A = 	[v,uv,n]
 						}
-					F.push(A);
+					F.push(A);		// format of f : [[v,uv,n],[v,uv,n],[v,uv,n]]
 				}
 				else if (D[i].substr(0,2)=="o ")		// ----- if object definition
 				{
@@ -2583,9 +2582,9 @@
 
 						for (j=0; j<f.length; j++)
 						{
-							var p:Array = f[j];	// data of a point:	[v,uv,n]
-							for (var k:int=0; k<p.length; k++)
-								p[k] = int(Number(p[k]))-1;
+							A = f[j];	// data of a point:	[v,uv,n]
+							for (var k:int=A.length-1; k>-1; k--)
+								A[k] = parseInt(A[k])-1;	// parse idx to int and convert to 0 based
 						}
 
 						// ----- triangulate higher order polygons
@@ -2629,14 +2628,20 @@
 							var ncx:Number = nx;
 							var ncy:Number = ny;
 							var ncz:Number = nz;
-							if (N.length>0)
+							if (A[2]>-1 && N.length>A[2]*3+2)
 							{
 								nax = N[A[2]*3+0];
 								nay = N[A[2]*3+1];
 								naz = N[A[2]*3+2];
+							}
+							if (A[5]>-1 && N.length>A[5]*3+2)
+							{
 								nbx = N[A[5]*3+0];
 								nby = N[A[5]*3+1];
 								nbz = N[A[5]*3+2];
+							}
+							if (A[8]>-1 && N.length>A[8]*3+2)
+							{
 								ncx = N[A[8]*3+0];
 								ncy = N[A[8]*3+1];
 								ncz = N[A[8]*3+2];
@@ -2649,21 +2654,21 @@
 							var vb:Number = 0;
 							var uc:Number = 0;
 							var vc:Number = 1;
-							if (T.length>0)
+							if (A[1]>-1 && T.length>A[1]*2+1)
 							{
 								ua = T[A[1]*2+0];
 								va = 1-T[A[1]*2+1];
+							}
+							if (A[4]>-1 && T.length>A[4]*2+1)
+							{
 								ub = T[A[4]*2+0];
 								vb = 1-T[A[4]*2+1];
+							}
+							if (A[7]>-1 && T.length>A[7]*2+1)
+							{
 								uc = T[A[7]*2+0];
 								vc = 1-T[A[7]*2+1];
 							}
-							//while (ua<0) ua+=1; while (ua>1) ua-=1;
-							//while (va<0) va+=1; while (va>1) va-=1;
-							//while (ub<0) ub+=1; while (ub>1) ub-=1;
-							//while (vb<0) vb+=1; while (vb>1) vb-=1;
-							//while (uc<0) uc+=1; while (uc>1) uc-=1;
-							//while (vc<0) vc+=1; while (vc>1) vc-=1;
 
 							verticesData.push(	vax,vay,vaz, nax,nay,naz, ua,va,
 												vbx,vby,vbz, nbx,nby,nbz, ub,vb,
@@ -2681,6 +2686,7 @@
 					cm.material.texMap = mtl;	//
 					cm.name = Names[g];
 					mmesh.addChild(cm);
+					//debugTrace("create child mesh "+cm.name);
 				}
 			}//endfor g
 
